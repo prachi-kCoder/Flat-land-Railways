@@ -1,0 +1,10 @@
+Training scenarios: 300 (seeds 1000..1302)
+Validation scenarios: 30 (seeds 5000..5029)
+Conditions: 8 trains, DisruptionSpec(count=1, duration=20, simultaneous=False)
+Warm start on 1675 decisions (72% Wait): best action matches rule 99.3%, mean P(rule action) 0.94, value fit R^2 0.92
+[  0.1 min] steps       0  validation delay   17.10  arrived  95.4%  saved
+[  3.5 min] steps   20000  validation delay   20.73  arrived  94.2%  
+[  6.8 min] steps   40000  validation delay   17.10  arrived  95.4%  
+[ 10.1 min] steps   60000  validation delay   22.60  arrived  93.8%  
+[ 13.6 min] steps   80000  validation delay   17.10  arrived  95.4%  
+[ 17.2 min] steps  100000  validation delay   20.73  arrived  94.2%  

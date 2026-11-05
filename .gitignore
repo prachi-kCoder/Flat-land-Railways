@@ -8,3 +8,6 @@ outputs/
 
 # Trained RL models and training logs (share final models separately)
 models/
+
+# Training console output
+logs/

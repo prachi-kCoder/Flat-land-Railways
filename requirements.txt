@@ -10,5 +10,10 @@ torch==2.15.0
 stable-baselines3==2.9.2
 gymnasium==1.4.0
 
+# Statistics for the robustness study (run_robustness.py).
+# Pin both: newer SciPy pulls in numpy 2.x, which flatland-rl 4.3.0 does not support.
+numpy==1.26.4
+scipy==1.15.3
+
 # For running the checks in tests/
 pytest==9.2.0

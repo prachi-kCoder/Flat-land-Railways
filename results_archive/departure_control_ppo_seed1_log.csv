@@ -1,0 +1,7 @@
+timesteps,minutes,val_mean_delay,val_arrived,saved
+0,0.1,17.1,0.9542,True
+20000,3.5,20.73,0.9417,False
+40000,6.8,17.1,0.9542,False
+60000,10.1,22.6,0.9375,False
+80000,13.6,17.1,0.9542,False
+100000,17.2,20.73,0.9417,False

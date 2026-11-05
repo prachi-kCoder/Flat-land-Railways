@@ -21,16 +21,19 @@ import statistics
 from railsim.disruptions import DisruptionSpec
 from railsim.env_factory import EnvConfig, usable_seeds
 from railsim.policies import POLICIES
-from railsim.rl_dispatch import ReleaseAll, RLDispatcher
+from railsim.rl_dispatch import HoldIfBlocked, ReleaseAll, RLDispatcher
+from railsim.strategy import EDFDispatcher, GreedySelect, RLStrategy, SPFDispatcher
 
-ALL_POLICIES = {**POLICIES, ReleaseAll.name: ReleaseAll, RLDispatcher.name: RLDispatcher}
-DEFAULT_POLICIES = list(POLICIES) + [ReleaseAll.name]   # add "rl" with --policies ... rl
+EXTRA = [EDFDispatcher, SPFDispatcher, GreedySelect, ReleaseAll, HoldIfBlocked]
+ALL_POLICIES = {**POLICIES, **{p.name: p for p in EXTRA},
+                RLStrategy.name: RLStrategy, RLDispatcher.name: RLDispatcher}
+DEFAULT_POLICIES = list(POLICIES) + [p.name for p in EXTRA]   # add rl_strategy / rl with --policies
 from railsim.runner import run_episode
 
 
 parser = argparse.ArgumentParser(description="Compare dispatching policies on the same scenarios.")
 parser.add_argument("--policies", nargs="+", default=DEFAULT_POLICIES, choices=list(ALL_POLICIES))
-parser.add_argument("--model", default=RLDispatcher.model_path, help="trained model for the 'rl' policy")
+parser.add_argument("--model", help="trained model for rl_strategy (rl_strategy_*.zip) or rl (rl_dispatcher_*.zip)")
 parser.add_argument("--trains", type=int, default=5, help="number of trains (default 5)")
 parser.add_argument("--seeds", type=int, default=10, help="number of scenarios (default 10)")
 parser.add_argument("--first-seed", type=int, default=0, help="search for usable seeds from here (default 0)")
@@ -39,7 +42,8 @@ parser.add_argument("--duration", type=int, default=10, help="steps each breakdo
 parser.add_argument("--simultaneous", action="store_true", help="all breakdowns start on the same step")
 parser.add_argument("--out", default="outputs/results.csv", help="CSV file to write (default outputs/results.csv)")
 args = parser.parse_args()
-RLDispatcher.model_path = args.model
+if args.model:
+    RLStrategy.model_path = RLDispatcher.model_path = args.model
 
 
 base = EnvConfig(num_trains=args.trains)

@@ -24,7 +24,10 @@ The code is written for **flatland-rl 4.3.0**. Older versions (3.x) use a differ
 | `python initial-rail.py` | Builds the base 30x30 scenario and prints each train's start, target and timetable. |
 | `python railway.py` | Draws the railway network in a window. Use `--save outputs/network.png` to save an image instead (works without a screen). |
 | `python train-movement.py` | Runs 5 trains with no dispatcher (always move forward) and reports departures, arrivals, blocking and deadlocks step by step. |
-| `python run_experiment.py` | Runs every policy on the same batch of disrupted scenarios, prints averages and writes one CSV row per run to `outputs/results.csv`. See `--help` for options (trains, number of scenarios, breakdown count/duration, simultaneous). |
+| `python run_experiment.py` | Runs every policy on the same batch of disrupted scenarios, prints averages and writes one CSV row per run to `outputs/results.csv`. See `--help` for options (trains, number of scenarios, breakdown count/duration, simultaneous, `--model` for RL). |
+| `python train_rl.py` | Trains an RL policy with PPO (see "Reinforcement learning"). |
+| `python run_robustness.py` | Runs all policies, frozen, under shifted conditions (see "Robustness study"). |
+| `python analyse_robustness.py` | Summaries, paired significance tests and degradation-curve plots for the robustness study. |
 
 ## Code layout
 
@@ -37,12 +40,19 @@ railsim/
   policies.py      dispatching policies: always_forward, shortest_path (no dispatcher),
                    fcfs, priority (rule-based, conflict-free)
   planner.py       conflict-free route booking in space and time, used by fcfs/priority
+  strategy.py      ordering rules (fcfs, priority, edf, spf), greedy_select, RL strategy
+                   selection (StrategyEnv, RLStrategy)
+  rl_dispatch.py   departure control: release_all, hold_if_blocked, RL Dispatch/Wait
   metrics.py       delay, recovery time, EpisodeResult
   runner.py        run_episode(): play one policy on one scenario and measure it
+docs/
+  literature_review.md          sources and how each one shaped the design
 tests/
   test_railsim.py               reproducibility and deadlock-detector checks
   test_disruptions_metrics.py   disruption, metric and runner checks
   test_dispatchers.py           planner and FCFS/Priority checks
+  test_strategy.py              strategy selection and its training environment
+  test_rl_dispatch.py           departure control and its training environment
 ```
 
 All scripts build their environment through `make_env(EnvConfig(...))`, so the same config and seed always give the same network, trains and timetable.
@@ -77,7 +87,14 @@ Not implemented yet: speed restrictions and track closures without a train on th
 | `always_forward` | Every train always moves forward. Ignores routes and other trains. |
 | `shortest_path` | Every train follows its shortest route and departs as soon as allowed; nobody ever waits for anyone (Flatland's `ShortestPathPolicy`). This is "no dispatcher". |
 | `fcfs` | Rule-based dispatcher. Trains book conflict-free routes in order of scheduled departure (first come, first served). |
-| `priority` | Rule-based dispatcher. Trains book routes in order of least slack: the train closest to missing its latest arrival goes first. Recomputed at every re-plan. |
+| `priority` | Rule-based dispatcher. Trains book routes in order of least slack: the train closest to missing its latest arrival goes first. Recomputed at every re-plan (Chen et al. 2023). |
+| `edf` | Rule-based. Earliest deadline (latest arrival) first. |
+| `spf` | Rule-based. Shortest remaining trip first. |
+| `greedy_select` | Rule selection, no learning. At every re-plan it plans with all four orderings above and keeps the plan with the least lateness. |
+| `release_all` | Departure control, no learning: every train is released as soon as it is ready; released trains book in release order. |
+| `hold_if_blocked` | Departure control, no learning: a ready train is released only if its route is free right now. |
+| `rl_strategy_*` | **RL**: a trained model chooses the ordering rule at every re-plan. |
+| `rl` | RL departure control (Dispatch/Wait per ready train). Kept for the record; see below. |
 
 **How `fcfs` and `priority` work** (`railsim/planner.py`): trains are planned one at a time in priority order. Each one searches for its earliest possible arrival, moving one cell per step or waiting (holding at its station or on the track), while avoiding every cell already booked by the trains before it. Its route is then booked. Booked routes never share a cell at the same time and never swap cells head-on, so these dispatchers cannot deadlock (checked in the tests). The two rules differ only in the order trains get to book.
 
@@ -99,20 +116,50 @@ A train that has not departed and cannot reach its target before the episode end
 
 The delay of a train that is not arrived is optimistic for deadlocked trains (they will never arrive), so always read delay together with arrived % and deadlocked.
 
-### RL dispatcher (in progress)
+### Reinforcement learning
 
-`railsim/rl_dispatch.py`: the RL agent decides **when each train leaves its station** (Dispatch or Wait, asked every step for every train that is ready). Routing is done by the same conflict-free planner as `fcfs`/`priority`, so it cannot deadlock. Released trains book routes in release order. Inspired by the dispatching/routing split in Castagna et al. 2026 (arXiv:2605.10257).
+All RL policies sit on top of the same conflict-free planner, so they **cannot cause deadlocks**; they only make the decisions the rule-based dispatchers make by fixed rules.
+
+**What we tried first: RL departure control** (`railsim/rl_dispatch.py`, `--task departure`). The agent decides, for each train ready to leave, Dispatch or Wait (the split used by Castagna et al. 2026). What happened:
+1. From scratch, PPO collapsed to "always Wait" (0% arrived). A single Wait only delays a train one step, so the benefit of waiting is rarely found by chance.
+2. After fixing the discounting and starting from imitation of `hold_if_blocked` (as Castagna et al. start from a heuristic), PPO could not improve on the rule; validation only flipped between the rule (17.1) and `release_all` (22.6).
+3. Hand-written variants of the rule were all worse, and giving released trains the Priority order made things much worse (47). The reason: FCFS/Priority plan **every** train in the timetable in advance, while a departure-control dispatcher only plans trains already released, so it lacks that foresight.
+
+Conclusion: in this setup, when to release a train is close to optimal with a simple rule; the room for improvement is in the **booking order**.
+
+**Final design: RL strategy selection** (`railsim/strategy.py`, `--task strategy`, default). On validation scenarios no single ordering rule was best: picking the better of FCFS/Priority per scenario cut delay by a third. Li et al. (2021) likewise ran several orderings and kept the best. So at every re-plan (the start, and whenever a breakdown knocks a train off its plan) the agent chooses which ordering rule (`fcfs`, `priority`, `edf`, `spf`) re-plans the network.
 
 | Piece | What it is |
 |---|---|
-| `DispatchEnv` | Gymnasium env: one step = one Dispatch/Wait decision. Reward = minus the increase in network delay / N, so an episode's rewards add up to -(total delay)/N. |
-| `observation()` | 12 numbers, all scaled by episode length or train count (what happens if released now, slack, congestion, breakdowns, ...). |
-| `ReleaseAll` (`release_all`) | Dispatch every ready train at once. Sanity check: what RL would do with no learning. |
-| `RLDispatcher` (`rl`) | Runs a trained model (`RLDispatcher.model_path`). |
-| `train_rl.py` | PPO training: 8 trains, 1 breakdown of 20 steps. Training seeds from 1000, validation from 5000, test (run_experiment) from 0. |
+| `StrategyEnv` | Gymnasium env: one step = one re-plan decision (about 4-5 per episode). Reward = minus the increase in network delay / N; with no discounting the episode return is exactly -(total delay)/N. |
+| `strategy_observation()` | 22 numbers: time, trains on track/arrived/waiting/broken, slack statistics, and for each rule how late its plan would make the trains, which rule's plan is best, and which rule is in use. |
+| `greedy_select` | Strongest non-learning baseline: always the rule whose plan is least late. RL must beat this to show that learning adds something. |
+| Warm start | Before PPO, the policy imitates `greedy_select` (99% matching choices) and the value function is fitted to its returns. Then PPO fine-tunes. |
+| Training | 8 trains, 1 breakdown of 20 steps. Seeds: training from 1000, validation from 5000, test from 0. 2 PPO seeds (60,000 decisions each, about 40 minutes on 4 CPU cores). The best checkpoint on validation is kept. |
+| Mixed control (not run yet) | `--task strategy_mixed` trains on varied conditions (6-12 trains, 10-40 step breakdowns, 1-2 breakdowns) to test whether broader training reduces degradation, as Yue et al. (2024) found. Implemented, but not trained for this study because of time; future work. |
+
+Checks (in `tests/`): the training environments pass Stable-Baselines3's checker; rewards add up exactly to the delay metric; and choosing a fixed rule, or the greedy choice, inside the training environment gives exactly the same result as running that dispatcher normally.
 
 ```bash
-python train_rl.py --timesteps 200000 --seed 1
+python train_rl.py --task strategy --seed 1
+python run_experiment.py --policies priority greedy_select rl_strategy --model models/rl_strategy_seed1.zip
+```
+
+### Robustness study
+
+`run_robustness.py` freezes the trained policies and changes one condition at a time away from training (8 trains, 1 breakdown of 20 steps):
+
+| Shift | Levels |
+|---|---|
+| Traffic density | 8, 12, 16, 20, 24 trains (+0% to +200%) |
+| Breakdown length | 10, 20, 40, 60, 100 steps |
+| Simultaneous breakdowns | 1, 2, 3, 4 |
+
+Every policy runs the same test scenarios at every level, so results are paired. `analyse_robustness.py` gives means with 95% bootstrap intervals, paired Wilcoxon signed-rank tests (RL vs each baseline, per scenario) and degradation-curve plots.
+
+```bash
+python run_robustness.py --seeds 20 --models models/rl_strategy_seed1.zip models/rl_strategy_seed2.zip
+python analyse_robustness.py
 ```
 
 ## Tests
