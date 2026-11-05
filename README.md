@@ -110,7 +110,8 @@ A train that has not departed and cannot reach its target before the episode end
 | Arrived on time | Arrived no later than `latest_arrival` |
 | Total delay | Sum over trains. Arrived: `max(0, arrival - latest_arrival)`. Not arrived: how late it would be if it ran its shortest path from where it is now, `max(0, now + remaining travel time - latest_arrival)`. Same convention as Flatland's reward; equals minus Flatland's episode reward when every train departs (checked in the tests). |
 | Deadlocked | Trains that can never move again at the end of the episode |
-| Recovery time | Steps from the first breakdown until the breakdowns stop adding delay. The same policy is also run on the same scenario without breakdowns; the extra delay is the difference between the two runs. Recovered = the first step (no earlier than the step after the last breakdown ends) from which the extra delay never changes again. Delay already caused stays; recovery means it stops growing. `None` = still changing when the episode ended. **Only meaningful for policies that do not deadlock**: a deadlocked network freezes, so its extra delay also stops changing. |
+| Recovery time | Steps from the first breakdown until the breakdowns stop adding delay. The same policy is also run on the same scenario without breakdowns; the extra delay is the difference between the two runs. Recovered = the first step (no earlier than the step after the last breakdown ends) from which the extra delay never changes again. Delay already caused stays; recovery means it stops growing. `None` = still changing when the episode ended. **Only meaningful for policies that do not deadlock**: a deadlocked network freezes, so its extra delay also stops changing. In practice it is mostly yes/no: in most runs the breakdowns either caused no extra delay at all, or their effect lasted until the last trains arrived; on average only 15% of runs recovered part-way (0-45% depending on the condition; see "Recovery from breakdowns"). |
+| Extra delay | Total delay with breakdowns minus total delay of the same policy on the same scenario without breakdowns: how much damage the breakdowns did. Always defined, so it can be compared scenario by scenario. Can be slightly negative (2% of runs): stopping a train occasionally avoids a conflict by chance. |
 | Replans | How many times a rule-based dispatcher re-planned |
 | Decision time | Wall-clock time the policy takes to choose actions per step |
 
@@ -216,6 +217,43 @@ Mean total delay (lower is better):
    - Every policy gets worse, but the ranking stays the same, and greedy/RL stay best at every level.
    - At 4 simultaneous breakdowns and 100-step breakdowns the gaps narrow: at 100 steps, 63.7 against 69.5 (hold_if_blocked) and 70.6 (fcfs).
 5. **RL departure control could not beat a simple rule** (see "Reinforcement learning" above). In this setup, when to release a train matters less than the booking order.
+
+### Recovery from breakdowns
+
+How much damage the breakdowns did (extra delay, see Metrics) and, in brackets, the share of runs where that damage was still growing when the episode ended. Mean over 20 test scenarios; lower is better. Data: `results/robustness/recovery_summary.csv`, paired tests in `results/robustness/recovery_paired.csv`.
+
+| Shift | Level | fcfs | priority | hold_if_blocked | greedy_select | rl seed 1 | rl seed 2 |
+|---|---|---|---|---|---|---|---|
+| Trains | 8 (training) | 23.9 (45%) | 19.3 (35%) | 8.3 (35%) | 8.4 (40%) | 8.4 (40%) | 8.4 (40%) |
+|  | 12 | 27.4 (35%) | 59.1 (70%) | 24.6 (35%) | 14.2 (45%) | 14.2 (45%) | 14.2 (45%) |
+|  | 16 | 18.6 (40%) | 90.8 (60%) | 25.8 (40%) | 7.2 (35%) | 7.2 (35%) | 7.2 (35%) |
+|  | 20 | 27.7 (40%) | 21.9 (35%) | 33.9 (20%) | 10.1 (30%) | 10.2 (30%) | 6.5 (25%) |
+|  | 24 | 25.2 (40%) | 244.9 (65%) | 2.4 (30%) | 69.0 (65%) | 70.8 (65%) | 69.0 (65%) |
+| Breakdown length | 10 | 1.0 (15%) | 17.1 (15%) | 0.7 (15%) | 1.4 (20%) | 1.4 (20%) | 1.4 (20%) |
+|  | 20 (training) | 23.9 (45%) | 19.3 (35%) | 8.3 (35%) | 8.4 (40%) | 8.4 (40%) | 8.4 (40%) |
+|  | 40 | 22.6 (60%) | 32.5 (55%) | 21.1 (55%) | 21.9 (60%) | 21.9 (60%) | 21.9 (60%) |
+|  | 60 | 44.3 (55%) | 64.1 (55%) | 42.8 (50%) | 44.5 (55%) | 43.7 (55%) | 44.5 (55%) |
+|  | 100 | 61.0 (65%) | 67.3 (55%) | 59.4 (60%) | 60.4 (60%) | 60.4 (60%) | 60.4 (60%) |
+| Simultaneous breakdowns | 1 (training) | 23.9 (45%) | 19.3 (35%) | 8.3 (35%) | 8.4 (40%) | 8.4 (40%) | 8.4 (40%) |
+|  | 2 | 9.5 (50%) | 17.8 (50%) | 14.7 (50%) | 12.4 (50%) | 12.4 (50%) | 12.4 (50%) |
+|  | 3 | 16.5 (55%) | 18.9 (50%) | 16.6 (55%) | 14.9 (40%) | 14.9 (40%) | 14.9 (40%) |
+|  | 4 | 30.6 (55%) | 26.8 (65%) | 30.1 (55%) | 30.2 (55%) | 30.2 (55%) | 30.2 (55%) |
+
+![Recovery from breakdowns](results/robustness/robustness_recovery.png)
+
+(greedy_select's line is hidden behind the RL lines: they are almost identical.)
+
+What this shows:
+- **At the training conditions the breakdown damage is not significantly different between policies.** greedy/RL had 8.4 extra delay against 23.9 (fcfs) and 19.3 (priority), but in 15–17 of 20 scenarios the damage was the same, and the differences are not significant (p = 0.5 and 1.0). The lower total delay of greedy/RL there comes mainly from better plans, not from absorbing breakdowns better.
+- **Long breakdowns hurt every policy about equally.** From 40 steps on, all policies lose 21–67 steps and the effect lasts to the end in 50–65% of runs; no difference against RL is significant (all p ≥ 0.12). Re-planning cannot win back a long blockage.
+- **At 12–20 trains greedy/RL contain breakdowns better than some fixed rules.** At 12 trains, 14.2 against 59.1 (priority, p = 0.016) and 40.4 (spf, p = 0.026); at 20 trains, 10.2 against 27.7 (fcfs, p = 0.032) and 33.9 (hold_if_blocked, p = 0.042). These p-values are near 0.05 and are among many comparisons, so treat them as indications, not firm results.
+- **At 24 trains this explains why the advantage disappears.**
+  - Without breakdowns, greedy/RL are by far the best: 55.6 total delay against 92.2 for fcfs.
+  - But their tight plans are hit harder: about 70 extra delay against 25.2 for fcfs (not significant, p = 0.51), and 65% of runs still spreading at the end.
+  - hold_if_blocked shows only 2.4 extra delay because its network is already congested without breakdowns (163.6), so the breakdowns add little (RL worse than it on extra delay: p = 0.035).
+- **Recovery time when the network did recover:** a median of about 30–36 steps after a 20-step breakdown under training conditions (31 for greedy/RL and fcfs, 36 for hold_if_blocked). Under training conditions only 5–20% of runs recovered part-way (15% on average over all conditions), so these medians rest on few runs.
+
+**Confound: not every planned breakdown happens.** Breakdowns are planned from the timetable (so every policy gets the same plan), but if the chosen train has already arrived when its breakdown is due, nothing happens. Overall 26% of planned breakdowns never happened; by policy, 23% (edf) to 27% (greedy_select, RL, hold_if_blocked, spf). A policy that gets trains in sooner can therefore dodge some breakdowns. The difference between policies is small (4 percentage points), but it should be kept in mind when comparing breakdown damage.
 
 ### Limitations
 
