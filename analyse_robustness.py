@@ -7,7 +7,15 @@
 # Writes:
 #   outputs/robustness_summary.csv   mean and 95% interval per policy/level
 #   outputs/robustness_paired.csv    each RL model vs each baseline, paired
+#   outputs/robustness_rl_vs_rl.csv  each RL model vs greedy_select, and the
+#                                    mixed-condition model vs the others
 #   outputs/robustness_total_delay.png, outputs/robustness_arrived.png
+#   outputs/recovery_summary.csv     extra delay caused by the breakdowns,
+#                                    how runs ended (no effect / recovered /
+#                                    lasted to the end), median recovery time,
+#                                    share of planned breakdowns that happened
+#   outputs/recovery_paired.csv      extra delay, each RL model vs each baseline
+#   outputs/robustness_recovery.png  recovery plots
 #
 # Statistics:
 #   - 95% interval of a mean: percentile bootstrap over test scenarios
@@ -83,6 +91,29 @@ def paired(df, rl_policies):
 # only for RL and greedy_select, to keep the figure readable.
 PLOTTED = ["fcfs", "priority", "hold_if_blocked", "greedy_select"]
 STYLES = {"fcfs": "C1", "priority": "C4", "hold_if_blocked": "C3", "greedy_select": "C2"}
+# One distinct colour per RL model (sorted by name), so seeds can be told apart.
+RL_COLOURS = ["#0EA5E9", "#1D4ED8", "#0F172A", "#DB2777", "#65A30D"]
+
+
+def paired_between_rl(df, rl_policies):
+    """Each RL model against greedy_select (its teacher) and, if present,
+    the mixed-condition model against each fixed-condition model."""
+    pairs = [(rl, "greedy_select") for rl in rl_policies]
+    mixed = [p for p in rl_policies if "mixed" in p]
+    pairs += [(m, f) for m in mixed for f in rl_policies if f not in mixed]
+    rows = []
+    for (shift, level), g in df.groupby(["shift", "level"]):
+        by_policy = {p: s.set_index("seed")["total_delay"] for p, s in g.groupby("policy")}
+        for first, second in pairs:
+            a, b = by_policy[first].align(by_policy[second], join="inner")
+            diff = (a - b).to_numpy()
+            nonzero = diff[diff != 0]
+            p = wilcoxon(nonzero).pvalue if len(nonzero) >= 1 else 1.0
+            rows.append({"shift": shift, "level": level, "first": first, "second": second,
+                         "mean_difference": diff.mean(), "first_better": int((diff < 0).sum()),
+                         "ties": int((diff == 0).sum()), "first_worse": int((diff > 0).sum()),
+                         "p_value": p, "significant": p < 0.05})
+    return pd.DataFrame(rows)
 
 
 def plot(summary, metric, ylabel, path):
@@ -96,7 +127,7 @@ def plot(summary, metric, ylabel, path):
             if g.empty:
                 continue
             is_rl = policy.startswith("rl")
-            color = STYLES.get(policy, "C0" if policy == (rl[0] if rl else None) else "C7")
+            color = STYLES.get(policy) or RL_COLOURS[rl.index(policy) % len(RL_COLOURS)]
             ax.plot(g["level"], g["mean"], "-" if is_rl else "--", marker="o" if is_rl else "s",
                     color=color, linewidth=2 if is_rl else 1.3, markersize=5, label=policy)
             if is_rl or policy == "greedy_select":
@@ -109,6 +140,91 @@ def plot(summary, metric, ylabel, path):
     fig.legend(handles, labels, loc="lower center", ncol=len(labels), fontsize=9, frameon=False)
     fig.suptitle(f"{ylabel} under shifted conditions (mean over test scenarios; bands = 95% interval)")
     fig.tight_layout(rect=(0, 0.07, 1, 1))
+    fig.savefig(path, dpi=150)
+    plt.close(fig)
+
+
+def recovery_summary(df):
+    """
+    Per shift, level and policy:
+      breakdowns_happened  share of planned breakdowns that actually hit a
+                           train (a breakdown planned for a train that has
+                           already arrived never happens)
+      extra_delay          total delay minus the same policy's delay on the
+                           same scenario without breakdowns (mean, 95% interval)
+      no_effect_pct        runs where the breakdowns caused no extra delay
+      recovered_pct        runs where the extra delay stopped changing
+                           before the episode ended
+      lasted_to_end_pct    runs where it was still changing at the end
+      median_recovery      median recovery time (steps) of recovered runs
+    """
+    rng = np.random.default_rng(1)
+    rows = []
+    for (shift, level, policy), g in df.groupby(["shift", "level", "policy"]):
+        low, high = bootstrap_ci(g["extra_delay"], rng)
+        rec = g["recovery_time"]
+        recovered = rec[rec > 0]
+        rows.append({
+            "shift": shift, "level": level, "policy": policy, "n": len(g),
+            "breakdowns_happened": ((g["disruptions_on_map"] + g["disruptions_off_map"]).sum()
+                                    / g["disruption_count"].sum()),
+            "extra_delay": g["extra_delay"].mean(), "extra_ci_low": low, "extra_ci_high": high,
+            "no_effect_pct": 100 * (rec == 0).mean(),
+            "recovered_pct": 100 * (rec > 0).mean(),
+            "lasted_to_end_pct": 100 * rec.isna().mean(),
+            "median_recovery": recovered.median() if len(recovered) else np.nan,
+        })
+    return pd.DataFrame(rows)
+
+
+def paired_extra_delay(df, rl_policies):
+    rows = []
+    for (shift, level), g in df.groupby(["shift", "level"]):
+        by_policy = {p: s.set_index("seed")["extra_delay"] for p, s in g.groupby("policy")}
+        for rl in rl_policies:
+            for base in BASELINES:
+                a, b = by_policy[rl].align(by_policy[base], join="inner")
+                diff = (a - b).to_numpy()
+                nonzero = diff[diff != 0]
+                p = wilcoxon(nonzero).pvalue if len(nonzero) >= 1 else 1.0
+                rows.append({"shift": shift, "level": level, "rl": rl, "baseline": base,
+                             "mean_extra_rl": a.mean(), "mean_extra_baseline": b.mean(),
+                             "mean_difference": diff.mean(), "rl_better": int((diff < 0).sum()),
+                             "ties": int((diff == 0).sum()), "rl_worse": int((diff > 0).sum()),
+                             "p_value": p, "significant": p < 0.05})
+    return pd.DataFrame(rows)
+
+
+def plot_recovery(rec, path):
+    shifts = list(SHIFT_LABELS)
+    rl = sorted(p for p in rec["policy"].unique() if p.startswith("rl"))
+    fig, axes = plt.subplots(2, len(shifts), figsize=(5 * len(shifts), 7.5))
+    for col, shift in enumerate(shifts):
+        part = rec[rec["shift"] == shift]
+        for policy in PLOTTED + rl:
+            g = part[part["policy"] == policy].sort_values("level")
+            if g.empty:
+                continue
+            is_rl = policy.startswith("rl")
+            color = STYLES.get(policy) or RL_COLOURS[rl.index(policy) % len(RL_COLOURS)]
+            kw = dict(color=color, marker="o" if is_rl else "s", markersize=5,
+                      linewidth=2 if is_rl else 1.3, linestyle="-" if is_rl else "--", label=policy)
+            axes[0, col].plot(g["level"], g["extra_delay"], **kw)
+            if is_rl or policy == "greedy_select":
+                axes[0, col].fill_between(g["level"], g["extra_ci_low"], g["extra_ci_high"], color=color, alpha=0.12)
+            axes[1, col].plot(g["level"], g["lasted_to_end_pct"], **kw)
+        for row in (0, 1):
+            axes[row, col].set_xticks(sorted(part["level"].unique()))
+            axes[row, col].grid(alpha=0.3)
+        axes[0, col].axhline(0, color="black", linewidth=0.8)
+        axes[0, col].set_ylabel("Extra delay from breakdowns (steps)")
+        axes[1, col].set_ylabel("Runs where effect lasted to the end (%)")
+        axes[1, col].set_xlabel(SHIFT_LABELS[shift])
+    handles, labels = axes[0, 0].get_legend_handles_labels()
+    fig.legend(handles, labels, loc="lower center", ncol=len(labels), fontsize=9, frameon=False)
+    fig.suptitle("Recovery from breakdowns: damage done (top) and how often it was still spreading "
+                 "when the episode ended (bottom)")
+    fig.tight_layout(rect=(0, 0.04, 1, 1))
     fig.savefig(path, dpi=150)
     plt.close(fig)
 
@@ -139,9 +255,26 @@ def main():
     if rl_policies:
         tests = paired(df, rl_policies)
         tests.to_csv(os.path.join(out, "robustness_paired.csv"), index=False)
+        between = paired_between_rl(df, rl_policies)
+        between.to_csv(os.path.join(out, "robustness_rl_vs_rl.csv"), index=False)
         print("\nRL vs baselines, paired per scenario (difference < 0 means RL has less delay):")
         cols = ["shift", "level", "rl", "baseline", "mean_difference", "rl_better", "ties", "rl_worse", "p_value"]
         print(tests[cols].round(3).to_string(index=False))
+    if "extra_delay" in df.columns and df["extra_delay"].notna().any():
+        rec = recovery_summary(df)
+        rec.to_csv(os.path.join(out, "recovery_summary.csv"), index=False)
+        plot_recovery(rec, os.path.join(out, "robustness_recovery.png"))
+        print("\nRecovery: extra delay caused by the breakdowns (mean; lower is better):")
+        print(rec.pivot_table(index=["shift", "level"], columns="policy", values="extra_delay").round(1).to_string())
+        print("\nRecovery: runs where the effect lasted until the episode ended (%):")
+        print(rec.pivot_table(index=["shift", "level"], columns="policy", values="lasted_to_end_pct").round(0).to_string())
+        print("\nRecovery: median recovery time of recovered runs (steps):")
+        print(rec.pivot_table(index=["shift", "level"], columns="policy", values="median_recovery").round(1).to_string())
+        print("\nShare of planned breakdowns that actually happened:")
+        print(rec.pivot_table(index=["shift", "level"], columns="policy", values="breakdowns_happened").round(2).to_string())
+        if rl_policies:
+            extra_tests = paired_extra_delay(df, rl_policies)
+            extra_tests.to_csv(os.path.join(out, "recovery_paired.csv"), index=False)
     print(f"\nSaved summaries and plots in {out}/")
 
 

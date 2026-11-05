@@ -1,0 +1,213 @@
+
+Mean total delay:
+policy                     edf  fcfs  greedy_select  hold_if_blocked  priority  release_all  rl_strategy_mixed_seed1  rl_strategy_seed1  rl_strategy_seed2  rl_strategy_seed3   spf
+shift              level                                                                                                                                                           
+realdata_multi     8      19.2  22.0            8.8             28.7      26.8         29.7                      8.8                8.8                8.8               13.2  31.1
+                   16     73.2  80.0           45.7             81.0     208.5         70.0                     45.7               45.7               45.7               69.0  84.6
+realdata_realistic 8      19.4  22.6           10.7             24.4      31.8         24.9                     10.7               10.7               10.7               15.6  25.9
+                   16     50.1  59.0           34.9             61.8     139.0         53.8                     35.6               35.1               35.0               43.2  54.2
+realdata_single    8      20.5  20.4            8.2             22.2      41.6         22.7                      8.2                8.2                8.2               13.1  25.8
+                   16     72.2  67.6           51.5             63.0     181.7         59.5                     53.4               51.6               51.5               63.8  73.9
+
+Share of trains arrived:
+policy                      edf   fcfs  greedy_select  hold_if_blocked  priority  release_all  rl_strategy_mixed_seed1  rl_strategy_seed1  rl_strategy_seed2  rl_strategy_seed3    spf
+shift              level                                                                                                                                                              
+realdata_multi     8      0.958  0.962          0.983            0.938     0.942        0.933                    0.983              0.983              0.983              0.975  0.929
+                   16     0.923  0.929          0.960            0.927     0.781        0.940                    0.960              0.960              0.960              0.927  0.919
+realdata_realistic 8      0.958  0.958          0.979            0.954     0.925        0.954                    0.979              0.979              0.979              0.967  0.942
+                   16     0.954  0.954          0.975            0.948     0.854        0.958                    0.975              0.975              0.975              0.962  0.958
+realdata_single    8      0.954  0.967          0.988            0.962     0.904        0.962                    0.988              0.988              0.988              0.975  0.942
+                   16     0.927  0.940          0.950            0.946     0.819        0.950                    0.946              0.950              0.950              0.938  0.925
+
+Extra delay caused by the breakdowns (mean):
+policy                     edf  fcfs  greedy_select  hold_if_blocked  priority  release_all  rl_strategy_mixed_seed1  rl_strategy_seed1  rl_strategy_seed2  rl_strategy_seed3   spf
+shift              level                                                                                                                                                           
+realdata_multi     8       3.1   3.3            2.0              8.2       1.7          8.7                      2.0                2.0                2.0                1.5   6.7
+                   16     26.7  23.2           15.1             20.6     127.5         18.7                     15.1               15.1               15.1               38.5  50.3
+realdata_realistic 8       8.2   9.9            9.8              9.9      16.7          9.9                      9.8                9.8                9.8                9.8   3.8
+                   16      5.0   3.0            5.9              2.0      79.1          3.4                      6.9                6.2                6.0               17.3  27.2
+realdata_single    8       4.4   1.7            1.4              1.7      16.5          1.7                      1.4                1.4                1.4                1.4   1.4
+                   16     25.8  10.8           20.9              2.7     100.7          8.2                     22.8               21.1               20.9               33.3  39.6
+
+Share of planned breakdowns that actually happened:
+policy                     edf  fcfs  greedy_select  hold_if_blocked  priority  release_all  rl_strategy_mixed_seed1  rl_strategy_seed1  rl_strategy_seed2  rl_strategy_seed3   spf
+shift              level                                                                                                                                                           
+realdata_multi     8      0.76  0.76           0.74             0.76      0.79         0.76                     0.74               0.74               0.74               0.74  0.78
+                   16     0.78  0.79           0.78             0.79      0.82         0.78                     0.78               0.78               0.78               0.79  0.76
+realdata_realistic 8      0.79  0.71           0.71             0.64      0.71         0.71                     0.71               0.71               0.71               0.71  0.71
+                   16     0.72  0.75           0.69             0.75      0.75         0.75                     0.69               0.69               0.69               0.72  0.69
+realdata_single    8      0.67  0.67           0.63             0.63      0.67         0.67                     0.63               0.63               0.63               0.63  0.67
+                   16     0.70  0.77           0.70             0.77      0.77         0.77                     0.70               0.70               0.70               0.70  0.67
+
+RL vs baselines, paired per scenario (difference < 0 means RL has less delay):
+             shift  level                      rl        baseline  mean_difference  rl_better  ties  rl_worse  p_value
+    realdata_multi      8 rl_strategy_mixed_seed1            fcfs          -13.133          9    20         1    0.004
+    realdata_multi      8 rl_strategy_mixed_seed1        priority          -18.000          8    22         0    0.008
+    realdata_multi      8 rl_strategy_mixed_seed1             edf          -10.400          9    21         0    0.004
+    realdata_multi      8 rl_strategy_mixed_seed1             spf          -22.267         13    17         0    0.000
+    realdata_multi      8 rl_strategy_mixed_seed1   greedy_select            0.000          0    30         0    1.000
+    realdata_multi      8 rl_strategy_mixed_seed1     release_all          -20.867         10    19         1    0.002
+    realdata_multi      8 rl_strategy_mixed_seed1 hold_if_blocked          -19.833         11    18         1    0.001
+    realdata_multi      8       rl_strategy_seed1            fcfs          -13.133          9    20         1    0.004
+    realdata_multi      8       rl_strategy_seed1        priority          -18.000          8    22         0    0.008
+    realdata_multi      8       rl_strategy_seed1             edf          -10.400          9    21         0    0.004
+    realdata_multi      8       rl_strategy_seed1             spf          -22.267         13    17         0    0.000
+    realdata_multi      8       rl_strategy_seed1   greedy_select            0.000          0    30         0    1.000
+    realdata_multi      8       rl_strategy_seed1     release_all          -20.867         10    19         1    0.002
+    realdata_multi      8       rl_strategy_seed1 hold_if_blocked          -19.833         11    18         1    0.001
+    realdata_multi      8       rl_strategy_seed2            fcfs          -13.133          9    20         1    0.004
+    realdata_multi      8       rl_strategy_seed2        priority          -18.000          8    22         0    0.008
+    realdata_multi      8       rl_strategy_seed2             edf          -10.400          9    21         0    0.004
+    realdata_multi      8       rl_strategy_seed2             spf          -22.267         13    17         0    0.000
+    realdata_multi      8       rl_strategy_seed2   greedy_select            0.000          0    30         0    1.000
+    realdata_multi      8       rl_strategy_seed2     release_all          -20.867         10    19         1    0.002
+    realdata_multi      8       rl_strategy_seed2 hold_if_blocked          -19.833         11    18         1    0.001
+    realdata_multi      8       rl_strategy_seed3            fcfs           -8.767          8    20         2    0.064
+    realdata_multi      8       rl_strategy_seed3        priority          -13.633          8    22         0    0.008
+    realdata_multi      8       rl_strategy_seed3             edf           -6.033          8    21         1    0.090
+    realdata_multi      8       rl_strategy_seed3             spf          -17.900         13    16         1    0.011
+    realdata_multi      8       rl_strategy_seed3   greedy_select            4.367          0    29         1    1.000
+    realdata_multi      8       rl_strategy_seed3     release_all          -16.500          9    19         2    0.010
+    realdata_multi      8       rl_strategy_seed3 hold_if_blocked          -15.467         10    18         2    0.021
+    realdata_multi     16 rl_strategy_mixed_seed1            fcfs          -34.367         20     8         2    0.006
+    realdata_multi     16 rl_strategy_mixed_seed1        priority         -162.833         22     8         0    0.000
+    realdata_multi     16 rl_strategy_mixed_seed1             edf          -27.500         17    11         2    0.016
+    realdata_multi     16 rl_strategy_mixed_seed1             spf          -38.933         16    10         4    0.018
+    realdata_multi     16 rl_strategy_mixed_seed1   greedy_select            0.000          0    30         0    1.000
+    realdata_multi     16 rl_strategy_mixed_seed1     release_all          -24.300         20     7         3    0.006
+    realdata_multi     16 rl_strategy_mixed_seed1 hold_if_blocked          -35.300         21     7         2    0.003
+    realdata_multi     16       rl_strategy_seed1            fcfs          -34.367         20     8         2    0.006
+    realdata_multi     16       rl_strategy_seed1        priority         -162.833         22     8         0    0.000
+    realdata_multi     16       rl_strategy_seed1             edf          -27.500         17    11         2    0.016
+    realdata_multi     16       rl_strategy_seed1             spf          -38.933         16    10         4    0.018
+    realdata_multi     16       rl_strategy_seed1   greedy_select            0.000          0    30         0    1.000
+    realdata_multi     16       rl_strategy_seed1     release_all          -24.300         20     7         3    0.006
+    realdata_multi     16       rl_strategy_seed1 hold_if_blocked          -35.300         21     7         2    0.003
+    realdata_multi     16       rl_strategy_seed2            fcfs          -34.367         20     8         2    0.006
+    realdata_multi     16       rl_strategy_seed2        priority         -162.833         22     8         0    0.000
+    realdata_multi     16       rl_strategy_seed2             edf          -27.500         17    11         2    0.016
+    realdata_multi     16       rl_strategy_seed2             spf          -38.933         16    10         4    0.018
+    realdata_multi     16       rl_strategy_seed2   greedy_select            0.000          0    30         0    1.000
+    realdata_multi     16       rl_strategy_seed2     release_all          -24.300         20     7         3    0.006
+    realdata_multi     16       rl_strategy_seed2 hold_if_blocked          -35.300         21     7         2    0.003
+    realdata_multi     16       rl_strategy_seed3            fcfs          -11.033         18     8         4    0.088
+    realdata_multi     16       rl_strategy_seed3        priority         -139.500         18    11         1    0.000
+    realdata_multi     16       rl_strategy_seed3             edf           -4.167         15    11         4    0.131
+    realdata_multi     16       rl_strategy_seed3             spf          -15.600         14     7         9    0.574
+    realdata_multi     16       rl_strategy_seed3   greedy_select           23.333          0    25         5    0.062
+    realdata_multi     16       rl_strategy_seed3     release_all           -0.967         18     7         5    0.088
+    realdata_multi     16       rl_strategy_seed3 hold_if_blocked          -11.967         19     7         4    0.068
+realdata_realistic      8 rl_strategy_mixed_seed1            fcfs          -11.867         10    20         0    0.002
+realdata_realistic      8 rl_strategy_mixed_seed1        priority          -21.067          7    22         1    0.078
+realdata_realistic      8 rl_strategy_mixed_seed1             edf           -8.633          8    21         1    0.027
+realdata_realistic      8 rl_strategy_mixed_seed1             spf          -15.133          9    20         1    0.037
+realdata_realistic      8 rl_strategy_mixed_seed1   greedy_select            0.033          0    29         1    1.000
+realdata_realistic      8 rl_strategy_mixed_seed1     release_all          -14.200         10    20         0    0.002
+realdata_realistic      8 rl_strategy_mixed_seed1 hold_if_blocked          -13.700         11    19         0    0.001
+realdata_realistic      8       rl_strategy_seed1            fcfs          -11.900         10    20         0    0.002
+realdata_realistic      8       rl_strategy_seed1        priority          -21.100          7    22         1    0.078
+realdata_realistic      8       rl_strategy_seed1             edf           -8.667          8    21         1    0.027
+realdata_realistic      8       rl_strategy_seed1             spf          -15.167          9    20         1    0.037
+realdata_realistic      8       rl_strategy_seed1   greedy_select            0.000          0    30         0    1.000
+realdata_realistic      8       rl_strategy_seed1     release_all          -14.233         10    20         0    0.002
+realdata_realistic      8       rl_strategy_seed1 hold_if_blocked          -13.733         11    19         0    0.001
+realdata_realistic      8       rl_strategy_seed2            fcfs          -11.900         10    20         0    0.002
+realdata_realistic      8       rl_strategy_seed2        priority          -21.100          7    22         1    0.078
+realdata_realistic      8       rl_strategy_seed2             edf           -8.667          8    21         1    0.027
+realdata_realistic      8       rl_strategy_seed2             spf          -15.167          9    20         1    0.037
+realdata_realistic      8       rl_strategy_seed2   greedy_select            0.000          0    30         0    1.000
+realdata_realistic      8       rl_strategy_seed2     release_all          -14.233         10    20         0    0.002
+realdata_realistic      8       rl_strategy_seed2 hold_if_blocked          -13.733         11    19         0    0.001
+realdata_realistic      8       rl_strategy_seed3            fcfs           -6.967          9    20         1    0.049
+realdata_realistic      8       rl_strategy_seed3        priority          -16.167          7    22         1    0.078
+realdata_realistic      8       rl_strategy_seed3             edf           -3.733          7    21         2    0.258
+realdata_realistic      8       rl_strategy_seed3             spf          -10.233          8    20         2    0.275
+realdata_realistic      8       rl_strategy_seed3   greedy_select            4.933          0    28         2    0.500
+realdata_realistic      8       rl_strategy_seed3     release_all           -9.300          9    20         1    0.027
+realdata_realistic      8       rl_strategy_seed3 hold_if_blocked           -8.800         10    19         1    0.031
+realdata_realistic     16 rl_strategy_mixed_seed1            fcfs          -23.400         22     7         1    0.000
+realdata_realistic     16 rl_strategy_mixed_seed1        priority         -103.400         12    17         1    0.001
+realdata_realistic     16 rl_strategy_mixed_seed1             edf          -14.533         14    12         4    0.037
+realdata_realistic     16 rl_strategy_mixed_seed1             spf          -18.667         12    14         4    0.059
+realdata_realistic     16 rl_strategy_mixed_seed1   greedy_select            0.700          0    27         3    0.250
+realdata_realistic     16 rl_strategy_mixed_seed1     release_all          -18.200         21     7         2    0.001
+realdata_realistic     16 rl_strategy_mixed_seed1 hold_if_blocked          -26.200         21     6         3    0.001
+realdata_realistic     16       rl_strategy_seed1            fcfs          -23.867         22     7         1    0.000
+realdata_realistic     16       rl_strategy_seed1        priority         -103.867         12    17         1    0.001
+realdata_realistic     16       rl_strategy_seed1             edf          -15.000         14    12         4    0.031
+realdata_realistic     16       rl_strategy_seed1             spf          -19.133         12    14         4    0.059
+realdata_realistic     16       rl_strategy_seed1   greedy_select            0.233          0    28         2    0.500
+realdata_realistic     16       rl_strategy_seed1     release_all          -18.667         21     7         2    0.001
+realdata_realistic     16       rl_strategy_seed1 hold_if_blocked          -26.667         21     6         3    0.001
+realdata_realistic     16       rl_strategy_seed2            fcfs          -24.000         23     6         1    0.000
+realdata_realistic     16       rl_strategy_seed2        priority         -104.000         13    16         1    0.001
+realdata_realistic     16       rl_strategy_seed2             edf          -15.133         14    13         3    0.029
+realdata_realistic     16       rl_strategy_seed2             spf          -19.267         12    15         3    0.061
+realdata_realistic     16       rl_strategy_seed2   greedy_select            0.100          0    29         1    1.000
+realdata_realistic     16       rl_strategy_seed2     release_all          -18.800         22     6         2    0.000
+realdata_realistic     16       rl_strategy_seed2 hold_if_blocked          -26.800         22     5         3    0.001
+realdata_realistic     16       rl_strategy_seed3            fcfs          -15.733         22     7         1    0.000
+realdata_realistic     16       rl_strategy_seed3        priority          -95.733         11    18         1    0.002
+realdata_realistic     16       rl_strategy_seed3             edf           -6.867         14    12         4    0.043
+realdata_realistic     16       rl_strategy_seed3             spf          -11.000         12    12         6    0.276
+realdata_realistic     16       rl_strategy_seed3   greedy_select            8.367          0    26         4    0.125
+realdata_realistic     16       rl_strategy_seed3     release_all          -10.533         21     7         2    0.001
+realdata_realistic     16       rl_strategy_seed3 hold_if_blocked          -18.533         21     6         3    0.001
+   realdata_single      8 rl_strategy_mixed_seed1            fcfs          -12.167         10    20         0    0.002
+   realdata_single      8 rl_strategy_mixed_seed1        priority          -33.400          7    23         0    0.016
+   realdata_single      8 rl_strategy_mixed_seed1             edf          -12.267          9    21         0    0.004
+   realdata_single      8 rl_strategy_mixed_seed1             spf          -17.567         11    19         0    0.001
+   realdata_single      8 rl_strategy_mixed_seed1   greedy_select            0.033          0    29         1    1.000
+   realdata_single      8 rl_strategy_mixed_seed1     release_all          -14.500         10    20         0    0.002
+   realdata_single      8 rl_strategy_mixed_seed1 hold_if_blocked          -14.000         11    19         0    0.001
+   realdata_single      8       rl_strategy_seed1            fcfs          -12.200         10    20         0    0.002
+   realdata_single      8       rl_strategy_seed1        priority          -33.433          7    23         0    0.016
+   realdata_single      8       rl_strategy_seed1             edf          -12.300          9    21         0    0.004
+   realdata_single      8       rl_strategy_seed1             spf          -17.600         11    19         0    0.001
+   realdata_single      8       rl_strategy_seed1   greedy_select            0.000          0    30         0    1.000
+   realdata_single      8       rl_strategy_seed1     release_all          -14.533         10    20         0    0.002
+   realdata_single      8       rl_strategy_seed1 hold_if_blocked          -14.033         11    19         0    0.001
+   realdata_single      8       rl_strategy_seed2            fcfs          -12.200         10    20         0    0.002
+   realdata_single      8       rl_strategy_seed2        priority          -33.433          7    23         0    0.016
+   realdata_single      8       rl_strategy_seed2             edf          -12.300          9    21         0    0.004
+   realdata_single      8       rl_strategy_seed2             spf          -17.600         11    19         0    0.001
+   realdata_single      8       rl_strategy_seed2   greedy_select            0.000          0    30         0    1.000
+   realdata_single      8       rl_strategy_seed2     release_all          -14.533         10    20         0    0.002
+   realdata_single      8       rl_strategy_seed2 hold_if_blocked          -14.033         11    19         0    0.001
+   realdata_single      8       rl_strategy_seed3            fcfs           -7.267          9    20         1    0.049
+   realdata_single      8       rl_strategy_seed3        priority          -28.500          7    23         0    0.016
+   realdata_single      8       rl_strategy_seed3             edf           -7.367          8    21         1    0.039
+   realdata_single      8       rl_strategy_seed3             spf          -12.667         10    19         1    0.054
+   realdata_single      8       rl_strategy_seed3   greedy_select            4.933          0    28         2    0.500
+   realdata_single      8       rl_strategy_seed3     release_all           -9.600          9    20         1    0.021
+   realdata_single      8       rl_strategy_seed3 hold_if_blocked           -9.100         10    19         1    0.031
+   realdata_single     16 rl_strategy_mixed_seed1            fcfs          -14.200         21     7         2    0.005
+   realdata_single     16 rl_strategy_mixed_seed1        priority         -128.300         13    15         2    0.005
+   realdata_single     16 rl_strategy_mixed_seed1             edf          -18.867         15    11         4    0.031
+   realdata_single     16 rl_strategy_mixed_seed1             spf          -20.500         14    13         3    0.017
+   realdata_single     16 rl_strategy_mixed_seed1   greedy_select            1.900          0    28         2    0.500
+   realdata_single     16 rl_strategy_mixed_seed1     release_all           -6.100         19     7         4    0.011
+   realdata_single     16 rl_strategy_mixed_seed1 hold_if_blocked           -9.667         22     5         3    0.003
+   realdata_single     16       rl_strategy_seed1            fcfs          -15.967         21     7         2    0.005
+   realdata_single     16       rl_strategy_seed1        priority         -130.067         13    16         1    0.002
+   realdata_single     16       rl_strategy_seed1             edf          -20.633         15    11         4    0.018
+   realdata_single     16       rl_strategy_seed1             spf          -22.267         14    13         3    0.017
+   realdata_single     16       rl_strategy_seed1   greedy_select            0.133          0    29         1    1.000
+   realdata_single     16       rl_strategy_seed1     release_all           -7.867         20     7         3    0.006
+   realdata_single     16       rl_strategy_seed1 hold_if_blocked          -11.433         22     5         3    0.003
+   realdata_single     16       rl_strategy_seed2            fcfs          -16.100         22     6         2    0.003
+   realdata_single     16       rl_strategy_seed2        priority         -130.200         14    15         1    0.002
+   realdata_single     16       rl_strategy_seed2             edf          -20.767         15    12         3    0.015
+   realdata_single     16       rl_strategy_seed2             spf          -22.400         14    14         2    0.017
+   realdata_single     16       rl_strategy_seed2   greedy_select            0.000          0    30         0    1.000
+   realdata_single     16       rl_strategy_seed2     release_all           -8.000         21     6         3    0.004
+   realdata_single     16       rl_strategy_seed2 hold_if_blocked          -11.567         23     4         3    0.002
+   realdata_single     16       rl_strategy_seed3            fcfs           -3.767         19     7         4    0.019
+   realdata_single     16       rl_strategy_seed3        priority         -117.867         12    17         1    0.001
+   realdata_single     16       rl_strategy_seed3             edf           -8.433         14    11         5    0.064
+   realdata_single     16       rl_strategy_seed3             spf          -10.067         13    11         6    0.295
+   realdata_single     16       rl_strategy_seed3   greedy_select           12.333          0    26         4    0.125
+   realdata_single     16       rl_strategy_seed3     release_all            4.333         18     7         5    0.026
+   realdata_single     16       rl_strategy_seed3 hold_if_blocked            0.767         20     5         5    0.013
+
+Saved summaries and plot in outputs/realdata_journey/

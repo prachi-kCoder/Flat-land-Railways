@@ -99,6 +99,8 @@ class EpisodeResult:
     flatland_reward: float
 
     recovery_time: Optional[int]
+    reference_delay: Optional[int]   # same scenario and policy without breakdowns
+    extra_delay: Optional[int]       # total_delay - reference_delay: damage done by the breakdowns
     disruptions_on_map: int
     disruptions_off_map: int
     disruptions_skipped: int

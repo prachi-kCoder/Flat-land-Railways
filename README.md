@@ -28,6 +28,8 @@ The code is written for **flatland-rl 4.3.0**. Older versions (3.x) use a differ
 | `python train_rl.py` | Trains an RL policy with PPO (see "Reinforcement learning"). |
 | `python run_robustness.py` | Runs all policies, frozen, under shifted conditions (see "Robustness study"). |
 | `python analyse_robustness.py` | Summaries, paired significance tests and degradation-curve plots for the robustness study. |
+| `python run_realdata.py` | Runs all policies with breakdown lengths drawn from real Finnish delay data (`--minutes-per-step` sets the time scale). |
+| `python analyse_realdata.py` | Summaries, paired tests and plots for the real-data test. |
 
 ## Code layout
 
@@ -45,6 +47,7 @@ railsim/
   rl_dispatch.py   departure control: release_all, hold_if_blocked, RL Dispatch/Wait
   metrics.py       delay, recovery time, EpisodeResult
   runner.py        run_episode(): play one policy on one scenario and measure it
+tools/realdata/                 download and process the Digitraffic delay data
 docs/
   literature_review.md          sources and how each one shaped the design
 tests/
@@ -53,6 +56,7 @@ tests/
   test_dispatchers.py           planner and FCFS/Priority checks
   test_strategy.py              strategy selection and its training environment
   test_rl_dispatch.py           departure control and its training environment
+  test_realdata_disruptions.py  breakdown lengths drawn from real data
 ```
 
 All scripts build their environment through `make_env(EnvConfig(...))`, so the same config and seed always give the same network, trains and timetable.
@@ -110,7 +114,8 @@ A train that has not departed and cannot reach its target before the episode end
 | Arrived on time | Arrived no later than `latest_arrival` |
 | Total delay | Sum over trains. Arrived: `max(0, arrival - latest_arrival)`. Not arrived: how late it would be if it ran its shortest path from where it is now, `max(0, now + remaining travel time - latest_arrival)`. Same convention as Flatland's reward; equals minus Flatland's episode reward when every train departs (checked in the tests). |
 | Deadlocked | Trains that can never move again at the end of the episode |
-| Recovery time | Steps from the first breakdown until the breakdowns stop adding delay. The same policy is also run on the same scenario without breakdowns; the extra delay is the difference between the two runs. Recovered = the first step (no earlier than the step after the last breakdown ends) from which the extra delay never changes again. Delay already caused stays; recovery means it stops growing. `None` = still changing when the episode ended. **Only meaningful for policies that do not deadlock**: a deadlocked network freezes, so its extra delay also stops changing. |
+| Recovery time | Steps from the first breakdown until the breakdowns stop adding delay. The same policy is also run on the same scenario without breakdowns; the extra delay is the difference between the two runs. Recovered = the first step (no earlier than the step after the last breakdown ends) from which the extra delay never changes again. Delay already caused stays; recovery means it stops growing. `None` = still changing when the episode ended. **Only meaningful for policies that do not deadlock**: a deadlocked network freezes, so its extra delay also stops changing. In practice it is mostly yes/no: in most runs the breakdowns either caused no extra delay at all, or their effect lasted until the last trains arrived; on average only 15% of runs recovered part-way (0-45% depending on the condition; see "Recovery from breakdowns"). |
+| Extra delay | Total delay with breakdowns minus total delay of the same policy on the same scenario without breakdowns: how much damage the breakdowns did. Always defined, so it can be compared scenario by scenario. Can be slightly negative (2% of runs): stopping a train occasionally avoids a conflict by chance. |
 | Replans | How many times a rule-based dispatcher re-planned |
 | Decision time | Wall-clock time the policy takes to choose actions per step |
 
@@ -135,8 +140,8 @@ Conclusion: in this setup, when to release a train is close to optimal with a si
 | `strategy_observation()` | 22 numbers: time, trains on track/arrived/waiting/broken, slack statistics, and for each rule how late its plan would make the trains, which rule's plan is best, and which rule is in use. |
 | `greedy_select` | Strongest non-learning baseline: always the rule whose plan is least late. RL must beat this to show that learning adds something. |
 | Warm start | Before PPO, the policy imitates `greedy_select` (99% matching choices) and the value function is fitted to its returns. Then PPO fine-tunes. |
-| Training | 8 trains, 1 breakdown of 20 steps. Seeds: training from 1000, validation from 5000, test from 0. 2 PPO seeds (60,000 decisions each, about 40 minutes on 4 CPU cores). The best checkpoint on validation is kept. |
-| Mixed control (not run yet) | `--task strategy_mixed` trains on varied conditions (6-12 trains, 10-40 step breakdowns, 1-2 breakdowns) to test whether broader training reduces degradation, as Yue et al. (2024) found. Implemented, but not trained for this study because of time; future work. |
+| Training | 8 trains, 1 breakdown of 20 steps. Seeds: training from 1000, validation from 5000, test from 0. 3 PPO seeds (60,000 decisions each, about 40 to 47 minutes on 4 CPU cores). The best checkpoint on validation is kept. |
+| Mixed control | `--task strategy_mixed` trains on varied conditions (6 to 12 trains, 10 to 40 step breakdowns, 1 or 2 breakdowns) to test whether broader training reduces degradation, as Yue et al. (2024) found. Validation stays on the standard conditions. |
 
 Checks (in `tests/`): the training environments pass Stable-Baselines3's checker; rewards add up exactly to the delay metric; and choosing a fixed rule, or the greedy choice, inside the training environment gives exactly the same result as running that dispatcher normally.
 
@@ -158,73 +163,155 @@ python run_experiment.py --policies priority greedy_select rl_strategy --model r
 Every policy runs the same test scenarios at every level, so results are paired. `analyse_robustness.py` gives means with 95% bootstrap intervals, paired Wilcoxon signed-rank tests (RL vs each baseline, per scenario) and degradation-curve plots.
 
 ```bash
-python run_robustness.py --seeds 20 --models results/models/rl_strategy_seed1.zip results/models/rl_strategy_seed2.zip
+python run_robustness.py --seeds 30 --models results/models/rl_strategy_seed1.zip results/models/rl_strategy_seed2.zip results/models/rl_strategy_seed3.zip results/models/rl_strategy_mixed_seed1.zip
 python analyse_robustness.py
 ```
 
 ## Results
 
-All numbers are on **test scenarios** (seeds 0+, never used in training or validation), 20 scenarios per condition. Full data: `results/robustness/` (per-run CSV, summary with 95% intervals, paired tests, plots). Trained models: `results/models/`. Training logs: `results/training/`.
+All numbers are on **test scenarios** (seeds 0 to 32, skipping 10, 17 and 30 where Flatland changes the city layout; never used in training or validation), **30 scenarios per condition**, for 7 rule-based policies and 4 RL models (PPO seeds 1 to 3 trained on fixed conditions, plus one trained on mixed conditions): 4,620 runs in all. Full data: `results/robustness/` (per-run CSV, summaries with 95% intervals, paired tests, plots). Trained models: `results/models/`. Training logs: `results/training/`.
+
+An earlier version of this study used 20 scenarios and 2 RL seeds (`results/robustness/robustness_20scenarios.csv`). On those 20 scenarios the final study gives exactly the same results (all 2,520 shared runs, 22 result columns).
 
 ### Training conditions (8 trains, 1 breakdown of 20 steps)
 
 | Policy | Total delay | Arrived | Cancelled trains |
 |---|---|---|---|
-| fcfs | 33.6 | 93.8% | 0.2 |
-| priority | 33.9 | 91.9% | 0.2 |
-| edf | 17.4 | 95.6% | 0.2 |
-| spf | 29.0 | 92.5% | 0.4 |
-| release_all | 18.8 | 96.2% | 0.1 |
-| hold_if_blocked | 18.4 | 96.2% | 0.1 |
-| greedy_select | 11.8 | 97.5% | 0.0 |
-| rl_strategy (seed 1 / seed 2) | 11.8 / 11.8 | 97.5% / 97.5% | 0.0 / 0.0 |
+| fcfs | 38.9 | 92.5% | 0.27 |
+| priority | 46.3 | 88.8% | 0.20 |
+| edf | 28.0 | 93.3% | 0.27 |
+| spf | 32.3 | 92.1% | 0.37 |
+| release_all | 31.1 | 93.8% | 0.27 |
+| hold_if_blocked | 30.8 | 93.8% | 0.27 |
+| greedy_select | 15.2 | 96.7% | 0.10 |
+| rl_strategy_seed1 | 15.5 | 96.2% | 0.10 |
+| rl_strategy_seed2 | 15.2 | 96.7% | 0.10 |
+| rl_strategy_seed3 | 16.5 | 95.8% | 0.10 |
+| rl_strategy_mixed_seed1 | 16.5 | 95.8% | 0.10 |
 
-No policy had a single deadlock in any test run (all use the conflict-free planner).
+No policy had a single deadlock in any of the 4,620 test runs (all use the conflict-free planner).
 
 ### Degradation under shifted conditions
 
 ![Total delay under shifted conditions](results/robustness/robustness_total_delay.png)
 
-Mean total delay (lower is better):
+Mean total delay over 30 test scenarios (lower is better):
 
-| Shift | Level | fcfs | priority | hold_if_blocked | greedy_select | rl seed 1 | rl seed 2 |
-|---|---|---|---|---|---|---|---|
-| Trains | 8 (training) | 33.6 | 33.9 | 18.4 | 11.8 | 11.8 | 11.8 |
-| | 12 | 54.8 | 82.0 | 55.6 | 16.4 | 16.4 | 16.4 |
-| | 16 | 77.2 | 165.6 | 85.2 | 12.2 | 12.2 | 12.2 |
-| | 20 | 124.8 | 226.0 | 151.8 | 67.0 | 65.6 | 72.8 |
-| | 24 | **117.4** | 458.2 | 166.0 | 124.6 | 126.5 | 124.6 |
-| Breakdown length | 10 | 10.7 | 31.6 | 10.8 | 4.7 | 4.7 | 4.7 |
-| | 20 (training) | 33.6 | 33.9 | 18.4 | 11.8 | 11.8 | 11.8 |
-| | 40 | 32.3 | 47.2 | 31.2 | 25.2 | 25.2 | 25.2 |
-| | 60 | 54.0 | 78.7 | 52.8 | 47.8 | 47.0 | 47.8 |
-| | 100 | 70.6 | 82.0 | 69.5 | 63.7 | 63.7 | 63.7 |
-| Simultaneous breakdowns | 1 (training) | 33.6 | 33.9 | 18.4 | 11.8 | 11.8 | 11.8 |
-| | 2 | 19.2 | 32.4 | 24.8 | 15.7 | 15.7 | 15.7 |
-| | 3 | 26.2 | 33.4 | 26.8 | 18.2 | 18.2 | 18.2 |
-| | 4 | 40.2 | 41.4 | 40.2 | 33.5 | 33.5 | 33.5 |
+| Shift | Level | fcfs | priority | hold_if_blocked | greedy_select | rl seed 1 | rl seed 2 | rl seed 3 | rl mixed |
+|---|---|---|---|---|---|---|---|---|---|
+| Trains | 8 (training) | 38.9 | 46.3 | 30.8 | 15.2 | 15.5 | 15.2 | 16.5 | 16.5 |
+|  | 12 | 58.8 | 90.2 | 64.1 | 24.2 | 26.0 | 26.0 | 26.2 | 26.0 |
+|  | 16 | 72.8 | 184.8 | 76.0 | 54.7 | 54.7 | 54.7 | 63.0 | 54.7 |
+|  | 20 | 119.5 | 371.1 | 158.3 | 75.9 | 75.0 | 79.9 | 126.6 | 75.1 |
+|  | 24 | 123.0 | 617.2 | 166.2 | 146.2 | 146.7 | 145.4 | 144.9 | 147.7 |
+| Breakdown length | 10 | 19.9 | 42.0 | 21.5 | 8.7 | 8.7 | 8.7 | 14.6 | 9.7 |
+|  | 20 (training) | 38.9 | 46.3 | 30.8 | 15.2 | 15.5 | 15.2 | 16.5 | 16.5 |
+|  | 40 | 50.1 | 54.3 | 51.3 | 28.0 | 28.1 | 28.1 | 29.1 | 29.1 |
+|  | 60 | 76.7 | 77.8 | 74.2 | 50.4 | 49.9 | 50.5 | 50.9 | 50.9 |
+|  | 100 | 87.8 | 80.0 | 85.3 | 61.0 | 61.0 | 61.0 | 62.1 | 62.1 |
+| Simultaneous breakdowns | 1 (training) | 38.9 | 46.3 | 30.8 | 15.2 | 15.5 | 15.2 | 16.5 | 16.5 |
+|  | 2 | 32.6 | 41.3 | 37.7 | 21.2 | 21.2 | 21.2 | 29.7 | 23.4 |
+|  | 3 | 39.6 | 47.3 | 41.5 | 26.4 | 26.4 | 26.4 | 32.4 | 27.8 |
+|  | 4 | 50.7 | 56.3 | 51.3 | 41.5 | 41.5 | 41.5 | 46.3 | 41.8 |
 
 ### What the results show
 
-1. **Choosing the ordering rule at every re-plan is the main gain.** greedy_select and RL have the lowest delay at 13 of 14 conditions. The gap is largest at moderate density: at 16 trains, 12.2 against 77–166 for the fixed rules. The difference against every fixed rule is significant there (paired Wilcoxon, p < 0.01).
-2. **The RL policies learned to copy greedy_select, not to beat it.**
-   - They choose the same rule as greedy on 100% of decisions under training conditions, and 96–99% with 20–24 trains.
-   - Their delay never differs significantly from greedy at any level (p ≥ 0.5).
-   - On validation, both PPO seeds started at 7.27 after imitation and reached best scores of 7.17 and 7.10, which is greedy's own score (7.10).
-3. **Robustness boundary: heavy traffic.** The advantage of rule selection shrinks as density rises. At 24 trains (+200%), plain FCFS has a lower mean delay than greedy and RL (117.4 against 124.6–126.5). That difference is not significant (p ≈ 0.10), so the honest reading is that the advantage **disappears** at this density, not that it reverses.
-4. **Longer and simultaneous breakdowns:**
-   - Every policy gets worse, but the ranking stays the same, and greedy/RL stay best at every level.
-   - At 4 simultaneous breakdowns and 100-step breakdowns the gaps narrow: at 100 steps, 63.7 against 69.5 (hold_if_blocked) and 70.6 (fcfs).
-5. **RL departure control could not beat a simple rule** (see "Reinforcement learning" above). In this setup, when to release a train matters less than the booking order.
+1. **Choosing the ordering rule at every re-plan is the main gain.** greedy_select and the RL models have the lowest delay in 13 of 14 conditions. The gap is largest at moderate density: at 16 trains, 54.7 against 72.8 to 184.8 for the fixed ordering rules, significant against every one of them for RL seeds 1, 2 and the mixed model (paired Wilcoxon, p ≤ 0.011).
+2. **The RL models learned to copy greedy_select, not to beat it.**
+   - They choose the same rule as greedy on 93% to 98% of decisions under training conditions, and on 92% to 98% with 20 to 24 trains (30 test scenarios). Seed 3 deviates most (92% to 95%), seed 2 least (98%).
+   - Their delay never differs significantly from greedy at any level (smallest p = 0.16, for seed 3).
+   - On validation, the best scores were 7.17 (seeds 1 and 3, mixed) and 7.10 (seed 2), against 7.10 for greedy.
+3. **When PPO did not copy greedy, it was usually worse.** Seed 3 ties greedy in 24 to 28 of 30 scenarios at every level, but where it differs it mostly loses: at 20 trains, 5 worse scenarios lift its mean to 126.6 against 75.9 for greedy. None of its differences is significant (p ≥ 0.16).
+4. **Mixed-condition training did not make the policy more robust.** The model trained on 6 to 12 trains, 10 to 40 step breakdowns and 1 or 2 breakdowns behaves like the fixed-condition models: it ties greedy and seed 1 in 25 to 30 of 30 scenarios at every level, and no difference is significant (all p ≥ 0.125). This holds both inside its training range and outside it (16 to 24 trains, 60 to 100 steps, 3 or 4 breakdowns). Unlike Yue et al. (2024), broader training changed nothing here, most likely because both policies converge to the same greedy behaviour.
+5. **Robustness boundary: heavy traffic.** At 24 trains (+200%), plain FCFS has the lowest mean delay: 123.0 against 144.9 to 147.7 for greedy and RL. The difference is **not significant** (p = 0.13 to 0.18), and per scenario RL is better than FCFS in 13 to 14 scenarios and worse in 6 to 7, losing a few by large margins. So the honest reading is that the advantage **disappears** at this density, not that it reverses.
+6. **Longer and simultaneous breakdowns:** every policy gets worse, but the ranking stays the same and greedy/RL stay best at every level. At 100-step breakdowns: 61.0 to 62.1 against 80.0 (priority), 85.3 (hold_if_blocked) and 87.8 (fcfs). At 4 simultaneous breakdowns: 41.5 to 46.3 against 50.7 to 56.3.
+7. **RL departure control could not beat a simple rule** (see "Reinforcement learning" above). In this setup, when to release a train matters less than the booking order.
+
+### Recovery from breakdowns
+
+How much damage the breakdowns did (extra delay, see Metrics) and, in brackets, the share of runs where that damage was still growing when the episode ended. Mean over 30 test scenarios; lower is better. Data: `results/robustness/recovery_summary.csv`, paired tests in `results/robustness/recovery_paired.csv`.
+
+| Shift | Level | fcfs | priority | hold_if_blocked | greedy_select | rl seed 1 | rl seed 2 | rl seed 3 | rl mixed |
+|---|---|---|---|---|---|---|---|---|---|
+| Trains | 8 (training) | 20.2 (43%) | 21.2 (40%) | 10.3 (37%) | 8.4 (37%) | 8.7 (40%) | 8.4 (37%) | 4.8 (40%) | 9.7 (40%) |
+|  | 12 | 22.7 (33%) | 57.5 (57%) | 20.8 (33%) | 15.6 (47%) | 16.2 (47%) | 16.2 (47%) | 16.4 (47%) | 16.2 (47%) |
+|  | 16 | 16.0 (50%) | 103.8 (57%) | 15.7 (50%) | 24.2 (40%) | 24.2 (40%) | 24.2 (40%) | 32.5 (40%) | 24.2 (40%) |
+|  | 20 | 21.6 (40%) | 49.3 (40%) | 27.2 (33%) | 8.0 (40%) | 8.1 (40%) | 5.6 (37%) | 53.2 (40%) | 8.0 (40%) |
+|  | 24 | 21.9 (40%) | 183.9 (53%) | 0.9 (30%) | 53.6 (57%) | 53.4 (53%) | 52.2 (53%) | 53.6 (53%) | 54.5 (50%) |
+| Breakdown length | 10 | 1.2 (10%) | 16.9 (23%) | 1.1 (10%) | 1.9 (20%) | 1.9 (20%) | 1.9 (20%) | 2.9 (20%) | 2.9 (20%) |
+|  | 20 (training) | 20.2 (43%) | 21.2 (40%) | 10.3 (37%) | 8.4 (37%) | 8.7 (40%) | 8.4 (37%) | 4.8 (40%) | 9.7 (40%) |
+|  | 40 | 31.4 (63%) | 29.2 (63%) | 30.9 (60%) | 21.2 (63%) | 21.3 (63%) | 21.3 (63%) | 17.4 (63%) | 22.3 (63%) |
+|  | 60 | 58.0 (60%) | 52.7 (63%) | 53.8 (57%) | 43.6 (60%) | 43.1 (60%) | 43.7 (60%) | 39.2 (60%) | 44.1 (60%) |
+|  | 100 | 69.1 (67%) | 54.8 (63%) | 64.9 (63%) | 54.2 (63%) | 54.2 (63%) | 54.2 (63%) | 50.4 (63%) | 55.3 (63%) |
+| Simultaneous breakdowns | 1 (training) | 20.2 (43%) | 21.2 (40%) | 10.3 (37%) | 8.4 (37%) | 8.7 (40%) | 8.4 (37%) | 4.8 (40%) | 9.7 (40%) |
+|  | 2 | 14.0 (40%) | 16.2 (50%) | 17.2 (43%) | 14.4 (50%) | 14.4 (50%) | 14.4 (50%) | 18.0 (50%) | 16.6 (50%) |
+|  | 3 | 21.0 (57%) | 22.2 (50%) | 21.0 (57%) | 19.6 (47%) | 19.6 (47%) | 19.6 (47%) | 20.7 (43%) | 21.0 (47%) |
+|  | 4 | 32.1 (53%) | 31.1 (67%) | 30.8 (53%) | 34.7 (63%) | 34.7 (63%) | 34.7 (63%) | 34.6 (60%) | 35.0 (63%) |
+
+![Recovery from breakdowns](results/robustness/robustness_recovery.png)
+
+What this shows:
+- **Under training conditions the breakdown damage is not significantly different between policies.** greedy/RL had 4.8 to 9.7 extra delay against 20.2 (fcfs) and 21.2 (priority), but the damage was the same in 20 to 22 of 30 scenarios and the differences are not significant (p = 0.31 and 0.49). The lower total delay of greedy/RL comes mainly from better plans, not from absorbing breakdowns better.
+- **Long breakdowns hurt every policy about equally.** From 40 steps on, all policies lose 17 to 69 steps, the effect lasts to the end in 57% to 67% of runs, and no difference against RL is significant (all p ≥ 0.10). Re-planning cannot win back a long blockage.
+- **At 20 trains, RL seeds 1, 2 and the mixed model contain breakdowns better than several rules:** 5.6 to 8.1 extra delay against 21.6 (fcfs), 35.6 (release_all) and 50.5 (edf), p = 0.002 to 0.016. Seed 3 does not (53.2). These are a few significant results among many comparisons, so treat them as indications.
+- **At 24 trains the picture is mixed.** Without breakdowns greedy/RL are only slightly better than FCFS (92.7 against 101.1), and breakdowns add more to their plans (52 to 55 against 21.9), but that difference is not significant (p = 0.32 to 0.50). With 20 scenarios we read this as "tightly packed plans are fragile"; with 30 scenarios it is a possible explanation, not an established one. hold_if_blocked shows only 0.9 extra delay because its network is already congested without breakdowns (165.3), so the breakdowns add little (RL has more extra delay than it, p ≤ 0.007).
+- **Recovery time is mostly a yes or no measure.** Only 17% of runs recovered part-way (10% to 23% under training conditions). When they did, the median was 31 to 33 steps after a 20-step breakdown.
+
+**Confound: not every planned breakdown happens.** Breakdowns are planned from the timetable (so every policy gets the same plan), but if the chosen train has already arrived when its breakdown is due, nothing happens. Overall 32% of planned breakdowns never happened; by policy, 28% (priority) to 33% (hold_if_blocked). A policy that gets trains in sooner can therefore dodge some breakdowns. The difference between policies is small, but it should be kept in mind when comparing breakdown damage.
+
+### Test with breakdown lengths from real data
+
+Everything above uses simulated breakdowns of fixed length. Here breakdown lengths, and in one scenario type their frequency, are drawn from real delay records of Finnish long-distance trains.
+
+- **Source:** Fintraffic's open Digitraffic railway data (rata.digitraffic.fi, the source of the FI-TW dataset; CC BY 4.0). We downloaded the 8th and 22nd of every month from January 2024 to December 2025: 48 days, 9,356 train runs.
+- **What counts as a breakdown:** the data records delays at stations, not breakdown durations. We take the delay added between consecutive timetable points (consecutive increases merged into one episode) that carries a rolling-stock or infrastructure cause code, 3 minutes or more. This gives 765 episodes: median 5 minutes, 90th percentile 15, 99th percentile 80, maximum 180. On average 0.0818 such episodes happen per train run.
+- **Minutes to steps:** Flatland has no time unit, so we use two scales. The main one matches journey lengths: the real median journey is 132 minutes and our median trip is 35 steps, so 1 step is about 3.77 minutes. As a check we also use 1 step = 1 minute. On the main scale, half of the real breakdowns last 1 step or less and only 1% last more than 21 steps, so they are mostly shorter than our 20-step training breakdown.
+- **Scenarios:** 1 breakdown, 3 breakdowns, or a real rate (each train breaks down with probability 0.0818; in our 30 scenarios that gave 0.47 breakdowns per run with 8 trains, where 60% of runs had none, and 1.07 with 16 trains); 8 and 16 trains; the same 30 test scenarios as above; all 11 policies, frozen.
+- Scripts: `tools/realdata/` (download, processing, figure), `run_realdata.py`, `analyse_realdata.py`. Data and results: `results/realdata/`.
+
+![Real delay episodes](results/realdata/real_delay_distribution.png)
+
+Mean total delay over 30 test scenarios, main scale (3.77 minutes per step). The p-value compares greedy_select with the best rule-based policy, paired per scenario:
+
+| Breakdowns | Trains | Best rule-based policy | greedy_select | rl seed 1 | rl seed 2 | rl seed 3 | rl mixed | p (greedy vs best rule) |
+|---|---|---|---|---|---|---|---|---|
+| 1 breakdown | 8 | fcfs 20.4 | 8.2 | 8.2 | 8.2 | 13.1 | 8.2 | 0.002 |
+| 1 breakdown | 16 | release_all 59.5 | 51.5 | 51.6 | 51.5 | 63.8 | 53.4 | 0.004 |
+| 3 breakdowns | 8 | edf 19.2 | 8.8 | 8.8 | 8.8 | 13.2 | 8.8 | 0.004 |
+| 3 breakdowns | 16 | release_all 70.0 | 45.7 | 45.7 | 45.7 | 69.0 | 45.7 | 0.006 |
+| real rate | 8 | edf 19.4 | 10.7 | 10.7 | 10.7 | 15.6 | 10.7 | 0.027 |
+| real rate | 16 | edf 50.1 | 34.9 | 35.1 | 35.0 | 43.2 | 35.6 | 0.024 |
+
+![Total delay with breakdown lengths from real data](results/realdata/journey/realdata_total_delay.png)
+
+Check scale (1 step = 1 minute):
+
+| Breakdowns | Trains | Best rule-based policy | greedy_select | rl seed 1 | rl seed 2 | rl seed 3 | rl mixed | p (greedy vs best rule) |
+|---|---|---|---|---|---|---|---|---|
+| 1 breakdown | 8 | edf 24.5 | 9.9 | 9.9 | 9.9 | 14.9 | 10.0 | 0.004 |
+| 1 breakdown | 16 | release_all 64.9 | 58.8 | 58.8 | 58.8 | 71.0 | 58.8 | 0.006 |
+| 3 breakdowns | 8 | fcfs 27.3 | 22.3 | 22.3 | 22.3 | 26.4 | 22.3 | 0.135 |
+| 3 breakdowns | 16 | edf 84.4 | 62.6 | 63.6 | 62.6 | 110.5 | 62.8 | 0.028 |
+| real rate | 8 | edf 19.9 | 10.3 | 10.3 | 10.3 | 15.3 | 10.4 | 0.006 |
+| real rate | 16 | release_all 56.8 | 18.9 | 18.9 | 18.9 | 25.7 | 18.9 | < 0.001 |
+
+What this shows:
+- **On realistic breakdown lengths, choosing the rule at every re-plan is still the best approach.** greedy_select and RL seeds 1, 2 and the mixed model have the lowest delay in all 6 settings on the main scale, significantly lower than the best rule-based policy in every one (p = 0.002 to 0.027 for greedy; 0.002 to 0.037 for these RL models).
+- **The 1-minute check agrees.** Lowest delay in all 6 settings, significant in 5; the exception is 3 breakdowns with 8 trains (22.3 against 27.3, p = 0.135).
+- **RL again matches greedy, and seed 3 is again weaker** (13.1 to 110.5 against 8.2 to 62.6 for greedy), significantly better than the best rule in only some settings.
+- **No deadlocks** in any of the 3,960 real-data runs.
+- **What this test checks:** because real breakdowns are mostly short, this is a test on realistic, mostly milder conditions, not a stress test. The stress tests are the robustness study above.
+
+Limits: these are station delays, not true breakdown durations; one country's long-distance trains; the minutes-to-steps scale is a modelling choice; the network and timetable are still Flatland's.
 
 ### Limitations
 
-- 20 test scenarios per condition and 2 PPO seeds, chosen for time. Differences of a few steps are within noise; see the p-values in `results/robustness/robustness_paired.csv`.
+- **Sample size:** 30 test scenarios per condition, 3 fixed-condition PPO seeds and 1 mixed-condition model. Differences of a few steps are within noise; see the p-values in `results/robustness/robustness_paired.csv` and `robustness_rl_vs_rl.csv`.
 - **The agent can't do better than the options it is given.** RL chooses among four ordering rules re-planned by the same planner; what it can achieve is bounded by those rules.
-- **What RL learned was mostly imitation.** It was warm-started by imitating greedy_select, and PPO fine-tuning did not move it far. Training from scratch failed in the departure-control experiment.
+- **What RL learned was mostly imitation.** It was warm-started by imitating greedy_select, and PPO fine-tuning did not move it far; where it did move (seed 3), it got worse. Training from scratch failed in the departure-control experiment.
 - **The dispatchers know each breakdown's length** once it happens; a real dispatcher would only have an estimate.
 - **Disruptions are train breakdowns only.** Speed restrictions and track closures without a train on them are not modelled.
-- **Mixed-condition training (Yue et al. 2024) was not run**, so we cannot say whether broader training would move the robustness boundary.
+- **Real data only sets breakdown lengths and frequency.** The networks and timetables are Flatland's, and the real data records delays at stations rather than breakdown durations (see the real-data section).
 
 ## Tests
 

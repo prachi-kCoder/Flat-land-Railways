@@ -1,0 +1,20 @@
+Task: strategy
+Training scenarios: 300 (seeds 1000..1302)
+Validation scenarios: 30 (seeds 5000..5029)
+Conditions: 8 trains, DisruptionSpec(count=1, duration=20, simultaneous=False)
+Warm start from greedy_select on 919 decisions (fcfs 65%, priority 23%, edf 11%, spf 2%): best action matches teacher 99.0%, mean P(teacher action) 0.96, value fit R^2 0.91
+[  0.2 min] steps       0  validation delay    7.17  arrived  97.9%  saved
+[  3.7 min] steps    5000  validation delay    7.17  arrived  97.9%  
+[  7.1 min] steps   10000  validation delay    7.17  arrived  97.9%  
+[ 10.7 min] steps   15000  validation delay    7.17  arrived  97.9%  
+[ 14.4 min] steps   20000  validation delay    7.17  arrived  97.9%  
+[ 17.8 min] steps   25000  validation delay    7.17  arrived  97.9%  
+[ 21.3 min] steps   30000  validation delay    7.17  arrived  97.9%  
+[ 24.9 min] steps   35000  validation delay    7.17  arrived  97.9%  
+[ 28.8 min] steps   40000  validation delay    7.17  arrived  97.9%  
+[ 33.0 min] steps   45000  validation delay    7.17  arrived  97.9%  
+[ 37.2 min] steps   50000  validation delay    7.17  arrived  97.9%  
+[ 41.2 min] steps   55000  validation delay    7.17  arrived  97.9%  
+[ 45.2 min] steps   60000  validation delay    7.17  arrived  97.9%  
+[ 45.7 min] steps   60416  validation delay    7.17  arrived  97.9%  
+Best validation mean delay: 7.17  ->  models/rl_strategy_seed3.zip
