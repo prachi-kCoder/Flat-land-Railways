@@ -85,6 +85,8 @@ def run_episode(config: EnvConfig, policy_class, disruptions: DisruptionSpec = N
             recovery_time(curve, reference_curve, env.disruption_plan)
             if reference_curve is not None else None
         ),
+        reference_delay=reference_curve[-1] if reference_curve is not None else None,
+        extra_delay=(sum(delays) - reference_curve[-1]) if reference_curve is not None else None,
         disruptions_on_map=applied.count("on_map"),
         disruptions_off_map=applied.count("off_map"),
         disruptions_skipped=applied.count("skipped"),

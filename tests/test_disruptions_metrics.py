@@ -157,3 +157,15 @@ def test_runner_same_plan_for_every_policy():
     b = run_episode(config, ShortestPathNoDispatch, spec)
     assert a.disruption_count == b.disruption_count == 2
     assert make_env(config, spec)[0].disruption_plan == make_env(config, spec)[0].disruption_plan
+
+
+@pytest.mark.parametrize("seed", usable_seeds(EnvConfig(num_trains=6), count=4))
+def test_extra_delay_equals_difference_with_undisrupted_run(seed):
+    """extra_delay = total delay with breakdowns - total delay of the same
+    policy on the same scenario without breakdowns (run independently here)."""
+    config = EnvConfig(num_trains=6, seed=seed)
+    disrupted = run_episode(config, ShortestPathNoDispatch, DisruptionSpec(count=2, duration=15))
+    undisrupted = run_episode(config, ShortestPathNoDispatch)
+    assert disrupted.reference_delay == undisrupted.total_delay
+    assert disrupted.extra_delay == disrupted.total_delay - undisrupted.total_delay
+    assert undisrupted.extra_delay is None and undisrupted.reference_delay is None
