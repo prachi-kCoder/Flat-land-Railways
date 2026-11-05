@@ -7,6 +7,8 @@
 # Writes:
 #   outputs/robustness_summary.csv   mean and 95% interval per policy/level
 #   outputs/robustness_paired.csv    each RL model vs each baseline, paired
+#   outputs/robustness_rl_vs_rl.csv  each RL model vs greedy_select, and the
+#                                    mixed-condition model vs the others
 #   outputs/robustness_total_delay.png, outputs/robustness_arrived.png
 #   outputs/recovery_summary.csv     extra delay caused by the breakdowns,
 #                                    how runs ended (no effect / recovered /
@@ -89,6 +91,29 @@ def paired(df, rl_policies):
 # only for RL and greedy_select, to keep the figure readable.
 PLOTTED = ["fcfs", "priority", "hold_if_blocked", "greedy_select"]
 STYLES = {"fcfs": "C1", "priority": "C4", "hold_if_blocked": "C3", "greedy_select": "C2"}
+# One distinct colour per RL model (sorted by name), so seeds can be told apart.
+RL_COLOURS = ["#0EA5E9", "#1D4ED8", "#0F172A", "#DB2777", "#65A30D"]
+
+
+def paired_between_rl(df, rl_policies):
+    """Each RL model against greedy_select (its teacher) and, if present,
+    the mixed-condition model against each fixed-condition model."""
+    pairs = [(rl, "greedy_select") for rl in rl_policies]
+    mixed = [p for p in rl_policies if "mixed" in p]
+    pairs += [(m, f) for m in mixed for f in rl_policies if f not in mixed]
+    rows = []
+    for (shift, level), g in df.groupby(["shift", "level"]):
+        by_policy = {p: s.set_index("seed")["total_delay"] for p, s in g.groupby("policy")}
+        for first, second in pairs:
+            a, b = by_policy[first].align(by_policy[second], join="inner")
+            diff = (a - b).to_numpy()
+            nonzero = diff[diff != 0]
+            p = wilcoxon(nonzero).pvalue if len(nonzero) >= 1 else 1.0
+            rows.append({"shift": shift, "level": level, "first": first, "second": second,
+                         "mean_difference": diff.mean(), "first_better": int((diff < 0).sum()),
+                         "ties": int((diff == 0).sum()), "first_worse": int((diff > 0).sum()),
+                         "p_value": p, "significant": p < 0.05})
+    return pd.DataFrame(rows)
 
 
 def plot(summary, metric, ylabel, path):
@@ -102,7 +127,7 @@ def plot(summary, metric, ylabel, path):
             if g.empty:
                 continue
             is_rl = policy.startswith("rl")
-            color = STYLES.get(policy, "C0" if policy == (rl[0] if rl else None) else "C7")
+            color = STYLES.get(policy) or RL_COLOURS[rl.index(policy) % len(RL_COLOURS)]
             ax.plot(g["level"], g["mean"], "-" if is_rl else "--", marker="o" if is_rl else "s",
                     color=color, linewidth=2 if is_rl else 1.3, markersize=5, label=policy)
             if is_rl or policy == "greedy_select":
@@ -181,7 +206,7 @@ def plot_recovery(rec, path):
             if g.empty:
                 continue
             is_rl = policy.startswith("rl")
-            color = STYLES.get(policy, "C0" if policy == (rl[0] if rl else None) else "C7")
+            color = STYLES.get(policy) or RL_COLOURS[rl.index(policy) % len(RL_COLOURS)]
             kw = dict(color=color, marker="o" if is_rl else "s", markersize=5,
                       linewidth=2 if is_rl else 1.3, linestyle="-" if is_rl else "--", label=policy)
             axes[0, col].plot(g["level"], g["extra_delay"], **kw)
@@ -230,6 +255,8 @@ def main():
     if rl_policies:
         tests = paired(df, rl_policies)
         tests.to_csv(os.path.join(out, "robustness_paired.csv"), index=False)
+        between = paired_between_rl(df, rl_policies)
+        between.to_csv(os.path.join(out, "robustness_rl_vs_rl.csv"), index=False)
         print("\nRL vs baselines, paired per scenario (difference < 0 means RL has less delay):")
         cols = ["shift", "level", "rl", "baseline", "mean_difference", "rl_better", "ties", "rl_worse", "p_value"]
         print(tests[cols].round(3).to_string(index=False))
