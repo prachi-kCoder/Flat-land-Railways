@@ -32,31 +32,47 @@ def network_delay(env):
 
 def recovery_time(delay_curve, reference_curve, disruption_plan):
     """
-    Steps from the first disruption starting until the network is back to
-    the delay it would have had with no disruption at all.
+    Steps from the first breakdown until the disruption stops adding delay.
 
-    delay_curve      network delay at each step of the disrupted run
-    reference_curve  same, for the same scenario and policy, no disruptions
-    Both curves are indexed by step number - 1.
+    delay_curve      network delay after each step of the disrupted run
+    reference_curve  same, for the same scenario and policy, no breakdowns
+    Both are indexed by step number - 1. The shorter curve is extended with
+    its last value (once an episode ends, delays no longer change).
 
-    Returns 0 if the disruptions never pushed delay above the reference,
-    and None if the network never recovered before the episode ended.
-    The network is only checked from the step after the last breakdown
-    ends, so a train that is still broken cannot count as recovered.
+    The extra delay caused by the disruption at step t is
+        excess(t) = delay_curve(t) - reference_curve(t).
+    The network has recovered at the first step s, no earlier than the step
+    after the last breakdown ends, from which excess never changes again:
+    the disruption is no longer spreading. Delay already caused (trains
+    that arrived late) stays in `excess`; recovery means it stops growing,
+    not that it disappears.
+
+    Returns 0 if the disruption never caused any extra delay, and None if
+    the extra delay was still changing when the episode ended.
     """
     if not disruption_plan:
         return None
     start = min(d.start_step for d in disruption_plan)
     earliest_check = max(d.end_step for d in disruption_plan) + 1
 
-    if all(delay <= ref for delay, ref in zip(delay_curve, reference_curve)):
+    length = max(len(delay_curve), len(reference_curve))
+
+    def extend(curve):
+        return list(curve) + [curve[-1]] * (length - len(curve))
+
+    excess = [a - b for a, b in zip(extend(delay_curve), extend(reference_curve))]
+    if not any(excess):
         return 0
 
-    for step in range(earliest_check, len(delay_curve) + 1):
-        reference = reference_curve[min(step, len(reference_curve)) - 1]
-        if delay_curve[step - 1] <= reference:
-            return step - start
-    return None
+    # Last step at which the excess changed (step numbers are index + 1).
+    last_change = max(
+        (i + 1 for i in range(1, length) if excess[i] != excess[i - 1]),
+        default=1,
+    )
+    if last_change >= length:
+        return None
+    recovered_at = max(last_change, earliest_check)
+    return recovered_at - start
 
 
 @dataclass
@@ -88,6 +104,7 @@ class EpisodeResult:
 
     decision_ms_mean: float
     decision_ms_max: float
+    replans: int   # rule-based dispatchers only; 0 for the reference policies
 
     delay_curve: List[int] = field(default_factory=list, repr=False)
 

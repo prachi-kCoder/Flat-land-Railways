@@ -126,12 +126,18 @@ def test_network_delay_is_zero_at_start():
 
 def test_recovery_time():
     plan = [Disruption(train=0, start_step=3, duration=2)]  # broken on steps 3-4
-    reference = [0, 0, 0, 0, 1, 1, 1, 1]
-    assert recovery_time([0, 0, 0, 0, 1, 1, 1, 1], reference, plan) == 0
-    assert recovery_time([0, 0, 2, 3, 3, 1, 1, 1], reference, plan) == 3   # back on step 6
-    assert recovery_time([0, 0, 2, 3, 3, 3, 3, 3], reference, plan) is None
-    # Cannot count as recovered while the train is still broken (step 4).
-    assert recovery_time([0, 0, 2, 0, 3, 1, 1, 1], reference, plan) == 3
+    reference = [0, 0, 0, 0, 1, 1, 1, 1, 1]
+    # No extra delay at all.
+    assert recovery_time([0, 0, 0, 0, 1, 1, 1, 1, 1], reference, plan) == 0
+    # Extra delay grows until step 6, then stays at +3: recovered at step 6.
+    assert recovery_time([0, 0, 1, 2, 3, 4, 4, 4, 4], reference, plan) == 3
+    # Extra delay still changing on the last step: not recovered.
+    assert recovery_time([0, 0, 1, 2, 3, 4, 5, 6, 7], reference, plan) is None
+    # Extra delay stops changing on step 4, but the train is still broken
+    # then; recovery cannot be earlier than step 5 (the step after the end).
+    assert recovery_time([0, 0, 1, 1, 2, 2, 2, 2, 2], reference, plan) == 2
+    # Curves of different lengths: the shorter is extended with its last value.
+    assert recovery_time([0, 0, 1, 2, 3, 3], reference, plan) == 2
 
 
 # ---------------------------------------------------------------- seeds

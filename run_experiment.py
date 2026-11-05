@@ -68,7 +68,10 @@ def spread(values):
     return statistics.stdev(values) if len(values) > 1 else 0.0
 
 
-header = f"{'policy':<16}{'arrived %':>12}{'total delay':>18}{'deadlocked':>12}{'recovered':>12}{'recovery steps':>16}"
+header = (
+    f"{'policy':<16}{'arrived %':>12}{'total delay':>18}{'deadlocked':>12}"
+    f"{'recovered':>12}{'recovery steps':>16}{'ms/step':>10}"
+)
 print(header)
 print("-" * len(header))
 for policy_name in args.policies:
@@ -83,7 +86,10 @@ for policy_name in args.policies:
         f"{policy_name:<16}{mean(arrived):>11.1f}%"
         f"{mean(delay):>11.1f} ± {spread(delay):<5.1f}"
         f"{mean(deadlocked):>12.2f}{recovered:>12}{recovery:>16}"
+        f"{mean([r.decision_ms_mean for r in rs]):>10.2f}"
     )
 
 print(f"\nPer-scenario results saved to {args.out}")
 print("Averages are over scenarios; ± is the standard deviation.")
+print("Recovered: runs where the extra delay caused by the breakdowns stopped growing")
+print("before the episode ended. Recovery steps: average over those runs.")

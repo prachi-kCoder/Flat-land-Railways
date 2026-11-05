@@ -37,6 +37,7 @@ def _run(config, policy, disruptions):
         done = dones["__all__"]
 
     stats = {
+        "replans": getattr(policy, "replans", 0),
         "decision_times": decision_times,
         "total_reward": total_reward,
         "first_deadlock_step": first_deadlock_step,
@@ -88,5 +89,6 @@ def run_episode(config: EnvConfig, policy_class, disruptions: DisruptionSpec = N
         disruptions_skipped=applied.count("skipped"),
         decision_ms_mean=round(sum(times_ms) / len(times_ms), 3),
         decision_ms_max=round(max(times_ms), 3),
+        replans=stats["replans"],
         delay_curve=curve,
     )
