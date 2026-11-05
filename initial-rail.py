@@ -1,114 +1,48 @@
 # ============================================================
 # Flatland-RL: Initial Railway Environment Setup
 # ============================================================
+#
+# Builds the base 30x30 railway scenario and prints each
+# train's start, target and timetable.
+#
+# Run:  python initial-rail.py
+# ============================================================
 
-from flatland.envs.rail_env import RailEnv
-from flatland.envs.rail_generators import sparse_rail_generator
-from flatland.envs.line_generators import sparse_line_generator
-
-
-# ------------------------------------------------------------
-# 1. Environment configuration
-# ------------------------------------------------------------
-
-WIDTH = 30
-HEIGHT = 30
-NUMBER_OF_TRAINS = 3
-SEED = 42
+from railsim import EnvConfig, direction_name, make_env, train_target
 
 
-# ------------------------------------------------------------
-# 2. Railway network generator
-# ------------------------------------------------------------
+CONFIG = EnvConfig(width=30, height=30, num_trains=3, seed=42)
 
-rail_generator = sparse_rail_generator(
-    max_num_cities=3,
-    grid_mode=False,
-    max_rails_between_cities=2,
-    max_rail_pairs_in_city=2,
-    seed=SEED
-)
+env, obs, info = make_env(CONFIG)
 
-
-# ------------------------------------------------------------
-# 3. Train start/target generator
-# ------------------------------------------------------------
-
-line_generator = sparse_line_generator()
-
-
-# ------------------------------------------------------------
-# 4. Create Flatland environment
-# ------------------------------------------------------------
-
-env = RailEnv(
-    width=WIDTH,
-    height=HEIGHT,
-    rail_generator=rail_generator,
-    line_generator=line_generator,
-    number_of_agents=NUMBER_OF_TRAINS,
-    random_seed=SEED
-)
-
-
-# ------------------------------------------------------------
-# 5. Generate the railway scenario
-# ------------------------------------------------------------
-
-obs, info = env.reset(random_seed=SEED)
-
-
-# ------------------------------------------------------------
-# 6. Display basic information
-# ------------------------------------------------------------
 
 print("=" * 60)
 print("FLATLAND RAILWAY ENVIRONMENT")
 print("=" * 60)
-
-print(f"Grid size        : {WIDTH} x {HEIGHT}")
-print(f"Number of trains : {NUMBER_OF_TRAINS}")
-print(f"Random seed      : {SEED}")
-
+print(f"Grid size        : {CONFIG.width} x {CONFIG.height}")
+print(f"Number of trains : {CONFIG.num_trains}")
+print(f"Random seed      : {CONFIG.seed}")
+print(f"Episode length   : {env._max_episode_steps} steps")
 print("\nEnvironment successfully created!")
 
-
-# ------------------------------------------------------------
-# 7. Display train information
-# ------------------------------------------------------------
 
 print("\nTRAIN INFORMATION")
 print("-" * 60)
 
 for agent in env.agents:
-
-    # Flatland versions may expose initial position/direction
-    # through the agent's current position/direction instead.
-    start_position = getattr(
-        agent, "initial_position",
-        getattr(agent, "position", None)
-    )
-
-    start_direction = getattr(
-        agent, "initial_direction",
-        getattr(agent, "direction", None)
-    )
+    start_cell, start_direction = agent.initial_configuration
 
     print(
         f"Train {agent.handle}: "
-        f"start={start_position}, "
-        f"target={agent.targets}, "
-        f"direction={start_direction}"
+        f"start={start_cell} facing {direction_name(start_direction)}, "
+        f"target={train_target(agent)}, "
+        f"departs at step {agent.earliest_departure}, "
+        f"due by step {agent.latest_arrival}"
     )
 
 
-# ------------------------------------------------------------
-# 8. Basic observation information
-# ------------------------------------------------------------
-
 print("\nOBSERVATION INFORMATION")
 print("-" * 60)
-
 print("Observation agents:", list(obs.keys()))
 
 print("\nInitial Flatland setup completed successfully!")
