@@ -15,7 +15,8 @@ Usage:
     env.disruption_plan   # list of Disruption that will be applied
 """
 
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
+from typing import Optional, Tuple
 
 import numpy as np
 from flatland.core.effects_generator import EffectsGenerator
@@ -45,14 +46,49 @@ class DisruptionSpec:
     duration     : steps each breakdown lasts
     simultaneous : if True, all breakdowns start on the same step;
                    otherwise each starts at its own random time
+    durations    : optional empirical sample of breakdown lengths in steps
+                   (for example converted from real delay data). If given,
+                   each breakdown's length is drawn from it and `duration`
+                   is not used.
+    rate_per_train : optional probability that each train breaks down once
+                   in the episode (for example measured from real data). If
+                   given, the number of breakdowns is drawn as
+                   Binomial(number of trains, rate) and `count` is not used.
+
+    Both options use their own random streams, so with both left as None the
+    plan is exactly the same as before they existed.
     """
 
     count: int = 1
     duration: int = 10
     simultaneous: bool = False
+    durations: Optional[Tuple[int, ...]] = None
+    rate_per_train: Optional[float] = None
 
 
 def plan_disruptions(env, spec, seed):
+    """
+    Plan the breakdowns for one scenario (see _plan_trains_and_times).
+    Optional real-data options: the number of breakdowns from
+    `spec.rate_per_train` (random stream [*seed, 3]) and each length from
+    `spec.durations` (random stream [*seed, 2]).
+    """
+    seed = list(seed) if isinstance(seed, (list, tuple)) else [seed]
+    if spec.rate_per_train is not None:
+        if not 0 <= spec.rate_per_train <= 1:
+            raise ValueError("rate_per_train must be between 0 and 1")
+        count = int(np.random.default_rng(seed + [3]).binomial(len(env.agents), spec.rate_per_train))
+        spec = replace(spec, count=count)
+    if spec.durations is None:
+        return _plan_trains_and_times(env, spec, seed)
+    if len(spec.durations) == 0 or min(spec.durations) < 1:
+        raise ValueError("durations must be a non-empty sample of lengths >= 1 step")
+    plan = _plan_trains_and_times(env, replace(spec, duration=1, durations=None), seed)
+    lengths = np.random.default_rng(seed + [2]).choice(np.asarray(spec.durations), size=len(plan))
+    return [replace(d, duration=int(length)) for d, length in zip(plan, lengths)]
+
+
+def _plan_trains_and_times(env, spec, seed):
     """
     Choose which trains break down and when, using only the timetable.
 
