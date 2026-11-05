@@ -79,22 +79,36 @@ def paired(df, rl_policies):
     return pd.DataFrame(rows)
 
 
+# Shown in the plots (all policies stay in the CSV files). Interval bands
+# only for RL and greedy_select, to keep the figure readable.
+PLOTTED = ["fcfs", "priority", "hold_if_blocked", "greedy_select"]
+STYLES = {"fcfs": "C1", "priority": "C4", "hold_if_blocked": "C3", "greedy_select": "C2"}
+
+
 def plot(summary, metric, ylabel, path):
     shifts = list(SHIFT_LABELS)
-    fig, axes = plt.subplots(1, len(shifts), figsize=(5 * len(shifts), 4), sharey=False)
+    rl = sorted(p for p in summary["policy"].unique() if p.startswith("rl"))
+    fig, axes = plt.subplots(1, len(shifts), figsize=(5 * len(shifts), 4.2))
     for ax, shift in zip(axes, shifts):
         part = summary[(summary["shift"] == shift) & (summary["metric"] == metric)]
-        for policy, g in part.groupby("policy"):
-            g = g.sort_values("level")
-            style = "-" if policy.startswith("rl") else "--"
-            ax.plot(g["level"], g["mean"], style, marker="o", label=policy)
-            ax.fill_between(g["level"], g["ci_low"], g["ci_high"], alpha=0.15)
+        for policy in PLOTTED + rl:
+            g = part[part["policy"] == policy].sort_values("level")
+            if g.empty:
+                continue
+            is_rl = policy.startswith("rl")
+            color = STYLES.get(policy, "C0" if policy == (rl[0] if rl else None) else "C7")
+            ax.plot(g["level"], g["mean"], "-" if is_rl else "--", marker="o" if is_rl else "s",
+                    color=color, linewidth=2 if is_rl else 1.3, markersize=5, label=policy)
+            if is_rl or policy == "greedy_select":
+                ax.fill_between(g["level"], g["ci_low"], g["ci_high"], color=color, alpha=0.12)
+        ax.set_xticks(sorted(part["level"].unique()))
         ax.set_xlabel(SHIFT_LABELS[shift])
         ax.set_ylabel(ylabel)
         ax.grid(alpha=0.3)
-    axes[0].legend(fontsize=8)
-    fig.suptitle(f"{ylabel} under shifted conditions (mean and 95% interval over test scenarios)")
-    fig.tight_layout()
+    handles, labels = axes[0].get_legend_handles_labels()
+    fig.legend(handles, labels, loc="lower center", ncol=len(labels), fontsize=9, frameon=False)
+    fig.suptitle(f"{ylabel} under shifted conditions (mean over test scenarios; bands = 95% interval)")
+    fig.tight_layout(rect=(0, 0.07, 1, 1))
     fig.savefig(path, dpi=150)
     plt.close(fig)
 
