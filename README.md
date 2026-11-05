@@ -24,15 +24,22 @@ The code is written for **flatland-rl 4.3.0**. Older versions (3.x) use a differ
 | `python initial-rail.py` | Builds the base 30x30 scenario and prints each train's start, target and timetable. |
 | `python railway.py` | Draws the railway network in a window. Use `--save outputs/network.png` to save an image instead (works without a screen). |
 | `python train-movement.py` | Runs 5 trains with no dispatcher (always move forward) and reports departures, arrivals, blocking and deadlocks step by step. |
+| `python run_experiment.py` | Runs every policy on the same batch of disrupted scenarios, prints averages and writes one CSV row per run to `outputs/results.csv`. See `--help` for options (trains, number of scenarios, breakdown count/duration, simultaneous). |
 
 ## Code layout
 
 ```
 railsim/
-  env_factory.py   EnvConfig + make_env(): the one place the environment is built
+  env_factory.py   EnvConfig + make_env(): the one place the environment is built;
+                   usable_seeds() skips seeds where Flatland changes the city layout
   train_status.py  train position/direction/target helpers, deadlock detection
+  disruptions.py   DisruptionSpec, planned breakdowns, Flatland hook that applies them
+  policies.py      dispatching policies (currently: always_forward, shortest_path)
+  metrics.py       delay, recovery time, EpisodeResult
+  runner.py        run_episode(): play one policy on one scenario and measure it
 tests/
-  test_railsim.py  reproducibility and deadlock-detector checks
+  test_railsim.py               reproducibility and deadlock-detector checks
+  test_disruptions_metrics.py   disruption, metric and runner checks
 ```
 
 All scripts build their environment through `make_env(EnvConfig(...))`, so the same config and seed always give the same network, trains and timetable.
@@ -42,6 +49,36 @@ All scripts build their environment through `make_env(EnvConfig(...))`, so the s
 `find_deadlocked_trains(env)` returns trains that can never move again, whatever actions they are given: every cell a train could enter is held by another deadlocked train. This covers head-on deadlocks, trains stuck behind them, and circular waits.
 
 Flatland also has `env.motion_check.deadlocked`, but that is a per-step flag meaning "these trains tried to swap cells this step". It fires even when one of the trains could still turn away at a switch, so it is not used as the deadlock measure here.
+
+### Disruptions
+
+A disruption is a train breakdown: the train stops where it is for a fixed number of steps and blocks the track behind it. If it has not departed yet, its departure is delayed instead.
+
+```python
+from railsim.disruptions import DisruptionSpec
+from railsim.env_factory import EnvConfig, make_env
+
+env, obs, info = make_env(EnvConfig(num_trains=8, seed=3),
+                          DisruptionSpec(count=2, duration=20, simultaneous=False))
+env.disruption_plan   # [Disruption(train=..., start_step=..., duration=20), ...]
+```
+
+The plan is drawn from the timetable only (each breakdown starts while that train is scheduled to be running), never from what happens during the run. So every policy faces exactly the same disruptions for a given seed. Adding disruptions does not change the network or timetable.
+
+Not implemented yet: speed restrictions and track closures without a train on them.
+
+### Metrics
+
+| Metric | Definition |
+|---|---|
+| Arrived % (throughput) | Trains that reached their target / all trains |
+| Arrived on time | Arrived no later than `latest_arrival` |
+| Total delay | Sum over trains. Arrived: `max(0, arrival - latest_arrival)`. Not arrived: how late it would be if it ran its shortest path from where it is now, `max(0, now + remaining travel time - latest_arrival)`. Same convention as Flatland's reward; equals minus Flatland's episode reward when every train departs (checked in the tests). |
+| Deadlocked | Trains that can never move again at the end of the episode |
+| Recovery time | Steps from the first breakdown until network delay is back to (or below) what the same policy gets on the same scenario with no breakdowns. Only checked after the last breakdown has ended. `None` = never recovered before the episode ended. |
+| Decision time | Wall-clock time the policy takes to choose actions per step |
+
+The delay of a train that is not arrived is optimistic for deadlocked trains (they will never arrive), so always read delay together with arrived % and deadlocked.
 
 ## Tests
 
