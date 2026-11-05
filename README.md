@@ -28,6 +28,8 @@ The code is written for **flatland-rl 4.3.0**. Older versions (3.x) use a differ
 | `python train_rl.py` | Trains an RL policy with PPO (see "Reinforcement learning"). |
 | `python run_robustness.py` | Runs all policies, frozen, under shifted conditions (see "Robustness study"). |
 | `python analyse_robustness.py` | Summaries, paired significance tests and degradation-curve plots for the robustness study. |
+| `python run_realdata.py` | Runs all policies with breakdown lengths drawn from real Finnish delay data (`--minutes-per-step` sets the time scale). |
+| `python analyse_realdata.py` | Summaries, paired tests and plots for the real-data test. |
 
 ## Code layout
 
@@ -45,6 +47,7 @@ railsim/
   rl_dispatch.py   departure control: release_all, hold_if_blocked, RL Dispatch/Wait
   metrics.py       delay, recovery time, EpisodeResult
   runner.py        run_episode(): play one policy on one scenario and measure it
+tools/realdata/                 download and process the Digitraffic delay data
 docs/
   literature_review.md          sources and how each one shaped the design
 tests/
@@ -53,6 +56,7 @@ tests/
   test_dispatchers.py           planner and FCFS/Priority checks
   test_strategy.py              strategy selection and its training environment
   test_rl_dispatch.py           departure control and its training environment
+  test_realdata_disruptions.py  breakdown lengths drawn from real data
 ```
 
 All scripts build their environment through `make_env(EnvConfig(...))`, so the same config and seed always give the same network, trains and timetable.
@@ -165,7 +169,7 @@ python analyse_robustness.py
 
 ## Results
 
-All numbers are on **test scenarios** (seeds 0 to 31, never used in training or validation), **30 scenarios per condition**, for 7 rule-based policies and 4 RL models (PPO seeds 1 to 3 trained on fixed conditions, plus one trained on mixed conditions): 4,620 runs in all. Full data: `results/robustness/` (per-run CSV, summaries with 95% intervals, paired tests, plots). Trained models: `results/models/`. Training logs: `results/training/`.
+All numbers are on **test scenarios** (seeds 0 to 32, skipping 10, 17 and 30 where Flatland changes the city layout; never used in training or validation), **30 scenarios per condition**, for 7 rule-based policies and 4 RL models (PPO seeds 1 to 3 trained on fixed conditions, plus one trained on mixed conditions): 4,620 runs in all. Full data: `results/robustness/` (per-run CSV, summaries with 95% intervals, paired tests, plots). Trained models: `results/models/`. Training logs: `results/training/`.
 
 An earlier version of this study used 20 scenarios and 2 RL seeds (`results/robustness/robustness_20scenarios.csv`). On those 20 scenarios the final study gives exactly the same results (all 2,520 shared runs, 22 result columns).
 
@@ -255,6 +259,51 @@ What this shows:
 
 **Confound: not every planned breakdown happens.** Breakdowns are planned from the timetable (so every policy gets the same plan), but if the chosen train has already arrived when its breakdown is due, nothing happens. Overall 32% of planned breakdowns never happened; by policy, 28% (priority) to 33% (hold_if_blocked). A policy that gets trains in sooner can therefore dodge some breakdowns. The difference between policies is small, but it should be kept in mind when comparing breakdown damage.
 
+### Test with breakdown lengths from real data
+
+Everything above uses simulated breakdowns of fixed length. Here breakdown lengths, and in one scenario type their frequency, are drawn from real delay records of Finnish long-distance trains.
+
+- **Source:** Fintraffic's open Digitraffic railway data (rata.digitraffic.fi, the source of the FI-TW dataset; CC BY 4.0). We downloaded the 8th and 22nd of every month from January 2024 to December 2025: 48 days, 9,356 train runs.
+- **What counts as a breakdown:** the data records delays at stations, not breakdown durations. We take the delay added between consecutive timetable points (consecutive increases merged into one episode) that carries a rolling-stock or infrastructure cause code, 3 minutes or more. This gives 765 episodes: median 5 minutes, 90th percentile 15, 99th percentile 80, maximum 180. On average 0.0818 such episodes happen per train run.
+- **Minutes to steps:** Flatland has no time unit, so we use two scales. The main one matches journey lengths: the real median journey is 132 minutes and our median trip is 35 steps, so 1 step is about 3.77 minutes. As a check we also use 1 step = 1 minute. On the main scale, half of the real breakdowns last 1 step or less and only 1% last more than 21 steps, so they are mostly shorter than our 20-step training breakdown.
+- **Scenarios:** 1 breakdown, 3 breakdowns, or a real rate (each train breaks down with probability 0.0818; in our 30 scenarios that gave 0.47 breakdowns per run with 8 trains, where 60% of runs had none, and 1.07 with 16 trains); 8 and 16 trains; the same 30 test scenarios as above; all 11 policies, frozen.
+- Scripts: `tools/realdata/` (download, processing, figure), `run_realdata.py`, `analyse_realdata.py`. Data and results: `results/realdata/`.
+
+![Real delay episodes](results/realdata/real_delay_distribution.png)
+
+Mean total delay over 30 test scenarios, main scale (3.77 minutes per step). The p-value compares greedy_select with the best rule-based policy, paired per scenario:
+
+| Breakdowns | Trains | Best rule-based policy | greedy_select | rl seed 1 | rl seed 2 | rl seed 3 | rl mixed | p (greedy vs best rule) |
+|---|---|---|---|---|---|---|---|---|
+| 1 breakdown | 8 | fcfs 20.4 | 8.2 | 8.2 | 8.2 | 13.1 | 8.2 | 0.002 |
+| 1 breakdown | 16 | release_all 59.5 | 51.5 | 51.6 | 51.5 | 63.8 | 53.4 | 0.004 |
+| 3 breakdowns | 8 | edf 19.2 | 8.8 | 8.8 | 8.8 | 13.2 | 8.8 | 0.004 |
+| 3 breakdowns | 16 | release_all 70.0 | 45.7 | 45.7 | 45.7 | 69.0 | 45.7 | 0.006 |
+| real rate | 8 | edf 19.4 | 10.7 | 10.7 | 10.7 | 15.6 | 10.7 | 0.027 |
+| real rate | 16 | edf 50.1 | 34.9 | 35.1 | 35.0 | 43.2 | 35.6 | 0.024 |
+
+![Total delay with breakdown lengths from real data](results/realdata/journey/realdata_total_delay.png)
+
+Check scale (1 step = 1 minute):
+
+| Breakdowns | Trains | Best rule-based policy | greedy_select | rl seed 1 | rl seed 2 | rl seed 3 | rl mixed | p (greedy vs best rule) |
+|---|---|---|---|---|---|---|---|---|
+| 1 breakdown | 8 | edf 24.5 | 9.9 | 9.9 | 9.9 | 14.9 | 10.0 | 0.004 |
+| 1 breakdown | 16 | release_all 64.9 | 58.8 | 58.8 | 58.8 | 71.0 | 58.8 | 0.006 |
+| 3 breakdowns | 8 | fcfs 27.3 | 22.3 | 22.3 | 22.3 | 26.4 | 22.3 | 0.135 |
+| 3 breakdowns | 16 | edf 84.4 | 62.6 | 63.6 | 62.6 | 110.5 | 62.8 | 0.028 |
+| real rate | 8 | edf 19.9 | 10.3 | 10.3 | 10.3 | 15.3 | 10.4 | 0.006 |
+| real rate | 16 | release_all 56.8 | 18.9 | 18.9 | 18.9 | 25.7 | 18.9 | < 0.001 |
+
+What this shows:
+- **On realistic breakdown lengths, choosing the rule at every re-plan is still the best approach.** greedy_select and RL seeds 1, 2 and the mixed model have the lowest delay in all 6 settings on the main scale, significantly lower than the best rule-based policy in every one (p = 0.002 to 0.027 for greedy; 0.002 to 0.037 for these RL models).
+- **The 1-minute check agrees.** Lowest delay in all 6 settings, significant in 5; the exception is 3 breakdowns with 8 trains (22.3 against 27.3, p = 0.135).
+- **RL again matches greedy, and seed 3 is again weaker** (13.1 to 110.5 against 8.2 to 62.6 for greedy), significantly better than the best rule in only some settings.
+- **No deadlocks** in any of the 3,960 real-data runs.
+- **What this test checks:** because real breakdowns are mostly short, this is a test on realistic, mostly milder conditions, not a stress test. The stress tests are the robustness study above.
+
+Limits: these are station delays, not true breakdown durations; one country's long-distance trains; the minutes-to-steps scale is a modelling choice; the network and timetable are still Flatland's.
+
 ### Limitations
 
 - **Sample size:** 30 test scenarios per condition, 3 fixed-condition PPO seeds and 1 mixed-condition model. Differences of a few steps are within noise; see the p-values in `results/robustness/robustness_paired.csv` and `robustness_rl_vs_rl.csv`.
@@ -262,6 +311,7 @@ What this shows:
 - **What RL learned was mostly imitation.** It was warm-started by imitating greedy_select, and PPO fine-tuning did not move it far; where it did move (seed 3), it got worse. Training from scratch failed in the departure-control experiment.
 - **The dispatchers know each breakdown's length** once it happens; a real dispatcher would only have an estimate.
 - **Disruptions are train breakdowns only.** Speed restrictions and track closures without a train on them are not modelled.
+- **Real data only sets breakdown lengths and frequency.** The networks and timetables are Flatland's, and the real data records delays at stations rather than breakdown durations (see the real-data section).
 
 ## Tests
 

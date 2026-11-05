@@ -1,0 +1,2 @@
+delay episodes >=5 min per 100 train runs, by month (both years):
+01:77 02:70 03:71 04:56 05:57 06:58 07:59 08:55 09:67 10:57 11:65 12:64

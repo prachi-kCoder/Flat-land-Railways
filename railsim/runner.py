@@ -69,7 +69,10 @@ def run_episode(config: EnvConfig, policy_class, disruptions: DisruptionSpec = N
         seed=config.seed,
         num_trains=config.num_trains,
         disruption_count=len(env.disruption_plan),
-        disruption_duration=spec.duration if env.disruption_plan else 0,
+        # Mean planned length; equals spec.duration unless lengths are drawn
+        # from an empirical sample (spec.durations).
+        disruption_duration=(round(sum(d.duration for d in env.disruption_plan) / len(env.disruption_plan))
+                             if env.disruption_plan else 0),
         simultaneous=spec.simultaneous if env.disruption_plan else False,
         steps=env._elapsed_steps,
         arrived=len(arrived),

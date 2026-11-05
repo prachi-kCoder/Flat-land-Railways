@@ -1,0 +1,12 @@
+(i) travel-time calibration, medians: 132 min / 35 steps = 3.77 min per step
+   failure episodes >=3 min (n=765): steps p50/p75/p90/p95/p99 = [1.0, 2.0, 4.0, 6.0, 21.1], max 48; <20 steps 98.8%, exactly 20 0.1%, 20-50 steps 1.2%, >50 0.0%
+   all delay episodes >=5 min (n=5865): steps p50/p75/p90/p95/p99 = [2.0, 2.0, 4.0, 6.0, 18.0], max 80; <20 steps 99.2%, exactly 20 0.1%, 20-50 steps 0.8%, >50 0.0%
+(i-b) travel-time calibration, means: 203.9 min / 35.6 steps = 5.73 min per step
+   failure episodes >=3 min (n=765): steps p50/p75/p90/p95/p99 = [1.0, 1.0, 3.0, 4.0, 13.7], max 31; <20 steps 99.6%, exactly 20 0.0%, 20-50 steps 0.4%, >50 0.0%
+   all delay episodes >=5 min (n=5865): steps p50/p75/p90/p95/p99 = [1.0, 2.0, 3.0, 4.0, 12.0], max 53; <20 steps 99.7%, exactly 20 0.0%, 20-50 steps 0.3%, >50 0.0%
+(ii) fixed: 1 min per step
+   failure episodes >=3 min (n=765): steps p50/p75/p90/p95/p99 = [5.0, 8.0, 15.0, 23.0, 80.2], max 180; <20 steps 92.5%, exactly 20 0.9%, 20-50 steps 5.4%, >50 2.1%
+   all delay episodes >=5 min (n=5865): steps p50/p75/p90/p95/p99 = [7.0, 9.0, 15.0, 22.0, 66.0], max 301; <20 steps 93.5%, exactly 20 0.7%, 20-50 steps 5.0%, >50 1.6%
+(iii) 20 steps = 95th percentile of failure episodes (23 min): 1.15 min per step
+   failure episodes >=3 min (n=765): steps p50/p75/p90/p95/p99 = [4.0, 7.0, 13.0, 20.0, 69.9], max 157; <20 steps 94.6%, exactly 20 0.7%, 20-50 steps 3.9%, >50 1.4%
+   all delay episodes >=5 min (n=5865): steps p50/p75/p90/p95/p99 = [6.0, 8.0, 13.0, 19.0, 57.0], max 262; <20 steps 95.0%, exactly 20 0.4%, 20-50 steps 3.8%, >50 1.2%

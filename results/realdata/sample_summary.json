@@ -1,0 +1,19 @@
+{
+ "train_runs": 9356,
+ "rows_with_actual_time": 771439,
+ "positive_increments": 107588,
+ "episodes": 92265,
+ "journey_minutes": {
+  "n": 9356,
+  "mean": 203.91179635171727,
+  "p50": 132.0,
+  "p75": 267.0,
+  "p90": 378.0,
+  "p95": 513.0,
+  "p99": 855.0,
+  "max": 961.0
+ },
+ "failure_episodes_ge3": 765,
+ "failure_episodes_ge3_per_train_run": 0.0818,
+ "note": "rate = failure episodes (>=3 min, rolling-stock or infrastructure cause) per long-distance train run in the Digitraffic sample; used as the chance one train breaks down once in an episode"
+}
