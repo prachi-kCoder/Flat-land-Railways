@@ -128,23 +128,30 @@ class PlanningDispatcher:
         self.last_plan_step = now
         self.replans += 1
 
-    def act(self, env):
-        now = env._elapsed_steps
+    def needs_replan(self, env, now):
+        """True if the plan must be redone now (first step, a train is off
+        its plan, or a retry for trains without a route is due)."""
         diverged = self.last_plan_step is not None and not self._plan_is_valid(env, now)
         self.divergences += diverged
-        need_plan = (
+        return (
             self.last_plan_step is None
             or diverged
-            or ((self.parked or self.unplanned) and now - self.last_plan_step >= self.retry_every)
+            or bool((self.parked or self.unplanned) and now - self.last_plan_step >= self.retry_every)
         )
-        if need_plan:
-            self._replan(env, now)
 
+    def follow_plan(self, env, now):
+        """Actions that move every train as its booked route says."""
         actions = {}
         for agent in env.agents:
             step = self.routes.get(agent.handle, {}).get(now + 1)
             actions[agent.handle] = step[1] if step else RailEnvActions.STOP_MOVING
         return actions
+
+    def act(self, env):
+        now = env._elapsed_steps
+        if self.needs_replan(env, now):
+            self._replan(env, now)
+        return self.follow_plan(env, now)
 
 
 class FCFSDispatcher(PlanningDispatcher):

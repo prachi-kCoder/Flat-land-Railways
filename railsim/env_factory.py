@@ -37,6 +37,30 @@ class EnvConfig:
 _LAYOUT_WARNINGS = ("could not set all required cities", "changing to grid mode")
 
 
+def clear_flatland_caches():
+    """
+    Empty Flatland's per-method result caches.
+
+    Several Flatland methods (e.g. GridTransitionMap.get_transitions,
+    RailEnv._is_speed_zero) are wrapped in functools.lru_cache. The cache
+    keys include `self`, so every environment ever built stays referenced
+    and is never freed. Building thousands of environments (RL training)
+    therefore ran out of memory: a training worker grew to 3 GB and was
+    killed by the system. Clearing the caches when a new environment is
+    built releases the old ones. Results are unchanged; the caches only
+    store answers that are recomputed on demand.
+    """
+    from flatland.core.transition_map import GridTransitionMap, TransitionMap
+    from flatland.envs.rail_env import AbstractRailEnv
+    from flatland.envs.rail_grid_transition_map import RailGridTransitionMap
+
+    for cls in (TransitionMap, GridTransitionMap, RailGridTransitionMap, AbstractRailEnv, RailEnv):
+        for member in vars(cls).values():
+            clear = getattr(member, "cache_clear", None)
+            if clear is not None:
+                clear()
+
+
 def make_env(config: EnvConfig, disruptions=None):
     """
     Build and reset a Flatland RailEnv from `config`.
@@ -57,6 +81,8 @@ def make_env(config: EnvConfig, disruptions=None):
     Flatland 4.x draws all randomness from the environment's seed and warns
     if the generator is given its own.
     """
+    clear_flatland_caches()
+
     rail_generator = sparse_rail_generator(
         max_num_cities=config.max_cities,
         grid_mode=config.grid_mode,

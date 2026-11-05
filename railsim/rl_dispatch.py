@@ -36,7 +36,7 @@ from railsim.planner import OFF_MAP, bookings_for, plan_route
 from railsim.policies import PlanningDispatcher, train_slack
 
 WAIT, DISPATCH = 0, 1
-OBS_SIZE = 12
+OBS_SIZE = 13
 
 
 def ready_to_release(env, now):
@@ -108,6 +108,11 @@ def observation(env, dispatcher, handle, now):
      9  broken          trains broken down right now / N
     10  late_in_plan    released trains the current plan makes late / N
     11  urgency_rank    position among waiting trains by slack (0 = most urgent) / N
+    12  free_now        1 if released now it could leave at once (route found,
+                        no hold at the station), else 0. Same information as
+                        0 and 2 combined, but as a clear on/off signal: a hold
+                        of 1 step is only ~0.01 in feature 2, which a small
+                        network barely separates from 0.
     """
     agent = env.agents[handle]
     T = env._max_episode_steps
@@ -148,6 +153,7 @@ def observation(env, dispatcher, handle, now):
         sum(a.state == TrainState.MALFUNCTION for a in env.agents) / N,
         late_in_plan / N,
         rank / N,
+        1.0 if route is not None and planned_hold == 0 else 0.0,
     ], dtype=np.float32)
     # Values are already in range by construction; clipping only guards
     # against unreachable targets (infinite distance).
@@ -162,6 +168,30 @@ class ReleaseAll(ReleaseDispatcher):
 
     def decide(self, env, now, handle):
         return DISPATCH
+
+
+def hold_if_blocked_action(obs):
+    """Dispatch only if the train could leave at once (obs[12], free_now);
+    otherwise Wait."""
+    return DISPATCH if obs[12] == 1.0 else WAIT
+
+
+class HoldIfBlocked(ReleaseDispatcher):
+    """
+    Simple departure-control rule (no learning): release a ready train only
+    if the planner can let it leave right away, i.e. its route is free now.
+    Otherwise keep it at the station and ask again next step.
+
+    Departure rules like this are what Laurent et al. (2021, arXiv:2103.16511,
+    Sec. 6) found "greatly improve the performance" in the Flatland 2020
+    challenge, so the RL agent must beat this rule, not only release_all,
+    before any gain can be credited to learning.
+    """
+
+    name = "hold_if_blocked"
+
+    def decide(self, env, now, handle):
+        return hold_if_blocked_action(observation(env, self, handle, now))
 
 
 class RLDispatcher(ReleaseDispatcher):
