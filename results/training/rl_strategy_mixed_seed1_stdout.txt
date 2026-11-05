@@ -1,0 +1,20 @@
+Task: strategy_mixed
+Training scenarios: 300 (seeds 1000..1302)
+Validation scenarios: 30 (seeds 5000..5029)
+Conditions: mixed per episode, trains [6, 8, 10, 12], breakdown steps [10, 20, 30, 40], breakdowns [1, 2]; validation on 8 trains, DisruptionSpec(count=1, duration=20, simultaneous=False)
+Warm start from greedy_select on 1526 decisions (fcfs 52%, priority 25%, edf 20%, spf 3%): best action matches teacher 99.1%, mean P(teacher action) 0.97, value fit R^2 0.87
+[  0.2 min] steps       0  validation delay    7.80  arrived  97.9%  saved
+[  3.8 min] steps    5000  validation delay    7.80  arrived  97.9%  
+[  8.0 min] steps   10000  validation delay    7.27  arrived  97.9%  saved
+[ 12.1 min] steps   15000  validation delay    7.80  arrived  97.9%  
+[ 15.8 min] steps   20000  validation delay    7.27  arrived  97.9%  
+[ 19.2 min] steps   25000  validation delay    7.17  arrived  97.9%  saved
+[ 22.8 min] steps   30000  validation delay    7.73  arrived  97.5%  
+[ 26.5 min] steps   35000  validation delay    7.77  arrived  97.5%  
+[ 30.5 min] steps   40000  validation delay    7.73  arrived  97.5%  
+[ 34.6 min] steps   45000  validation delay    7.27  arrived  97.9%  
+[ 38.7 min] steps   50000  validation delay    7.27  arrived  97.9%  
+[ 42.3 min] steps   55000  validation delay    7.77  arrived  97.5%  
+[ 46.1 min] steps   60000  validation delay    7.30  arrived  97.9%  
+[ 46.7 min] steps   60416  validation delay    7.30  arrived  97.9%  
+Best validation mean delay: 7.17  ->  models/rl_strategy_mixed_seed1.zip
