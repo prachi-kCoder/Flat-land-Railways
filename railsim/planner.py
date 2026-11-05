@@ -173,10 +173,42 @@ def _unwind(came_from, key):
     return route
 
 
+def _fixed_bookings(env, parked, now):
+    """
+    Facts that hold whatever the plan: every train on the track holds its
+    cell now and for as long as it is broken down; parked trains hold their
+    cell to the end of the episode.
+    """
+    bookings = Bookings()
+    for agent in env.agents:
+        if agent.state.is_on_map_state():
+            cell = agent.current_configuration[0]
+            for t in range(now, earliest_move_time(agent, now)):
+                bookings.book(cell, t, agent.handle)
+    for handle in parked:
+        bookings.book_until_end(env.agents[handle].current_configuration[0], now, handle)
+    return bookings
+
+
+def _book_route(bookings, env, handle, route):
+    for t, (configuration, _action) in route.items():
+        if configuration is not OFF_MAP:
+            bookings.book(configuration[0], t, handle)
+
+
+def bookings_for(env, routes, parked, now):
+    """Bookings of the current plan: fixed facts plus every booked route."""
+    bookings = _fixed_bookings(env, parked, now)
+    for handle, route in routes.items():
+        _book_route(bookings, env, handle, route)
+    return bookings
+
+
 def plan_all(env, order, now):
     """
     Plan every unfinished train in `order` (list of handles, first = highest
-    priority).
+    priority). Every train on the track holds its current cell whether or not
+    it is in `order`.
 
     Returns (routes, parked):
       routes  {handle: route} for trains that found a route
@@ -188,18 +220,7 @@ def plan_all(env, order, now):
     parked = set()
 
     while True:
-        bookings = Bookings()
-
-        # Facts that hold whatever the plan: every train on the track holds
-        # its cell now and for as long as it is broken down.
-        for handle in active:
-            agent = env.agents[handle]
-            if agent.state.is_on_map_state():
-                cell = agent.current_configuration[0]
-                for t in range(now, earliest_move_time(agent, now)):
-                    bookings.book(cell, t, handle)
-        for handle in parked:
-            bookings.book_until_end(env.agents[handle].current_configuration[0], now, handle)
+        bookings = _fixed_bookings(env, parked, now)
 
         routes = {}
         newly_parked = None
@@ -214,14 +235,7 @@ def plan_all(env, order, now):
                     break
                 continue
             routes[handle] = route
-            for t, (configuration, _action) in route.items():
-                if configuration is not OFF_MAP:
-                    bookings.book(configuration[0], t, handle)
-            last_t = max(route)
-            last_configuration = route[last_t][0]
-            target = _target_cell(agent)
-            if last_configuration is not OFF_MAP and last_configuration[0] == target:
-                bookings.book(target, last_t, handle)
+            _book_route(bookings, env, handle, route)
 
         if newly_parked is None:
             return routes, parked

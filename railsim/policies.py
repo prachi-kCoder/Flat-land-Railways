@@ -50,6 +50,25 @@ class ShortestPathNoDispatch:
         return self._policy.act_many(handles, [env] * len(handles))
 
 
+def train_slack(env, handle, now):
+    """
+    Spare steps before the train misses its latest arrival, if it ran its
+    shortest path from now (or from its departure, if it has not left yet):
+
+        slack = latest_arrival - (start + shortest remaining travel time)
+
+    Negative = the train will be late even with a clear track.
+    """
+    agent = env.agents[handle]
+    distance = env.distance_map.get()
+    if agent.state.is_on_map_state():
+        (r, c), d = agent.current_configuration
+        return agent.latest_arrival - (now + distance[handle, r, c, d])
+    (r, c), d = agent.initial_configuration
+    start = max(now, agent.earliest_departure)
+    return agent.latest_arrival - (start + distance[handle, r, c, d] + 1)
+
+
 class PlanningDispatcher:
     """
     Rule-based dispatcher: books conflict-free routes for all trains in a
@@ -99,10 +118,12 @@ class PlanningDispatcher:
         return True
 
     def _replan(self, env, now):
-        self.routes, self.parked = plan_all(env, self.priority_order(env, now), now)
+        order = self.priority_order(env, now)
+        self.routes, self.parked = plan_all(env, order, now)
+        # Trains we tried to plan but could not (not departed, no route yet).
         self.unplanned = {
-            a.handle for a in env.agents
-            if a.state != TrainState.DONE and a.handle not in self.routes and a.handle not in self.parked
+            h for h in order
+            if env.agents[h].state != TrainState.DONE and h not in self.routes and h not in self.parked
         }
         self.last_plan_step = now
         self.replans += 1
@@ -151,21 +172,7 @@ class PriorityDispatcher(PlanningDispatcher):
     name = "priority"
 
     def priority_order(self, env, now):
-        distance = env.distance_map.get()
-
-        def slack(handle):
-            agent = env.agents[handle]
-            if agent.state.is_on_map_state():
-                (r, c), d = agent.current_configuration
-                remaining = distance[handle, r, c, d]
-            else:
-                (r, c), d = agent.initial_configuration
-                remaining = distance[handle, r, c, d] + 1
-                now_or_departure = max(now, agent.earliest_departure)
-                return (agent.latest_arrival - (now_or_departure + remaining), handle)
-            return (agent.latest_arrival - (now + remaining), handle)
-
-        return sorted(env.get_agent_handles(), key=slack)
+        return sorted(env.get_agent_handles(), key=lambda h: (train_slack(env, h, now), h))
 
 
 POLICIES = {

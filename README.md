@@ -99,6 +99,22 @@ A train that has not departed and cannot reach its target before the episode end
 
 The delay of a train that is not arrived is optimistic for deadlocked trains (they will never arrive), so always read delay together with arrived % and deadlocked.
 
+### RL dispatcher (in progress)
+
+`railsim/rl_dispatch.py`: the RL agent decides **when each train leaves its station** (Dispatch or Wait, asked every step for every train that is ready). Routing is done by the same conflict-free planner as `fcfs`/`priority`, so it cannot deadlock. Released trains book routes in release order. Inspired by the dispatching/routing split in Castagna et al. 2026 (arXiv:2605.10257).
+
+| Piece | What it is |
+|---|---|
+| `DispatchEnv` | Gymnasium env: one step = one Dispatch/Wait decision. Reward = minus the increase in network delay / N, so an episode's rewards add up to -(total delay)/N. |
+| `observation()` | 12 numbers, all scaled by episode length or train count (what happens if released now, slack, congestion, breakdowns, ...). |
+| `ReleaseAll` (`release_all`) | Dispatch every ready train at once. Sanity check: what RL would do with no learning. |
+| `RLDispatcher` (`rl`) | Runs a trained model (`RLDispatcher.model_path`). |
+| `train_rl.py` | PPO training: 8 trains, 1 breakdown of 20 steps. Training seeds from 1000, validation from 5000, test (run_experiment) from 0. |
+
+```bash
+python train_rl.py --timesteps 200000 --seed 1
+```
+
 ## Tests
 
 ```bash

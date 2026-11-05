@@ -90,6 +90,7 @@ class EpisodeResult:
     arrived: int
     arrived_on_time: int
     deadlocked: int
+    cancelled: int   # never left their station (Castagna et al. 2026 report this separately)
     first_deadlock_step: Optional[int]
 
     total_delay: int
