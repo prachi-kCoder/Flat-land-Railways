@@ -2,344 +2,141 @@
 # Flatland-RL: Initial Study of Train Movement
 #               and Resource Conflicts
 # ============================================================
+#
+# Every train is always told MOVE_FORWARD (no dispatcher logic).
+# The script records, step by step:
+#   - departures and arrivals,
+#   - trains that wanted to move but were blocked by another train,
+#   - trains that became permanently deadlocked.
+#
+# Two trains can never occupy the same cell in Flatland, so
+# conflicts show up as blocking and deadlocks, not as overlaps.
+#
+# Run:  python train-movement.py
+# ============================================================
 
-from flatland.envs.rail_env import RailEnv
-from flatland.envs.rail_generators import sparse_rail_generator
-from flatland.envs.line_generators import sparse_line_generator
+from flatland.envs.rail_env_action import RailEnvActions
+from flatland.envs.step_utils.states import TrainState
 
-
-# ------------------------------------------------------------
-# 1. Configuration
-# ------------------------------------------------------------
-
-WIDTH = 30
-HEIGHT = 30
-NUMBER_OF_TRAINS = 5
-SEED = 42
-MAX_STEPS = 100
-
-
-# ------------------------------------------------------------
-# 2. Railway Network Generator
-# ------------------------------------------------------------
-
-rail_generator = sparse_rail_generator(
-    max_num_cities=3,
-    grid_mode=False,
-    max_rails_between_cities=2,
-    max_rail_pairs_in_city=2,
-    seed=SEED
-)
+from railsim import EnvConfig, find_deadlocked_trains, make_env, train_position
 
 
-# ------------------------------------------------------------
-# 3. Train Generator
-# ------------------------------------------------------------
+CONFIG = EnvConfig(width=30, height=30, num_trains=5, seed=42)
 
-line_generator = sparse_line_generator()
+env, obs, info = make_env(CONFIG)
+max_steps = env._max_episode_steps
 
-
-# ------------------------------------------------------------
-# 4. Create Flatland Environment
-# ------------------------------------------------------------
-
-env = RailEnv(
-    width=WIDTH,
-    height=HEIGHT,
-    rail_generator=rail_generator,
-    line_generator=line_generator,
-    number_of_agents=NUMBER_OF_TRAINS,
-    random_seed=SEED
-)
-
-
-# ------------------------------------------------------------
-# 5. Reset Environment
-# ------------------------------------------------------------
-
-obs, info = env.reset(random_seed=SEED)
-
-
-# ------------------------------------------------------------
-# 6. Display Initial Configuration
-# ------------------------------------------------------------
 
 print("=" * 70)
 print("     INITIAL STUDY OF TRAIN MOVEMENT AND RESOURCE CONFLICTS")
 print("=" * 70)
+print(f"Grid Size        : {CONFIG.width} x {CONFIG.height}")
+print(f"Number of Trains : {CONFIG.num_trains}")
+print(f"Episode Length   : {max_steps} steps (set by Flatland)")
+print(f"Random Seed      : {CONFIG.seed}")
 
-print(f"Grid Size        : {WIDTH} x {HEIGHT}")
-print(f"Number of Trains : {NUMBER_OF_TRAINS}")
-print(f"Maximum Steps    : {MAX_STEPS}")
-print(f"Random Seed      : {SEED}")
-
-
-print("\nINITIAL TRAIN CONFIGURATION")
+print("\nTIMETABLE")
 print("-" * 70)
-
 for agent in env.agents:
-
-    start_position = getattr(
-        agent,
-        "initial_position",
-        getattr(agent, "position", None)
-    )
-
     print(
-        f"Train {agent.handle}: "
-        f"Start={start_position}, "
-        f"Target={agent.targets}"
+        f"Train {agent.handle}: departs at step {agent.earliest_departure}, "
+        f"due by step {agent.latest_arrival}"
     )
 
 
-# ------------------------------------------------------------
-# 7. Simulation Variables
-# ------------------------------------------------------------
-
-print("\n")
-print("=" * 70)
-print("MULTI-TRAIN MOVEMENT OBSERVATION")
+print("\n" + "=" * 70)
+print("MULTI-TRAIN MOVEMENT OBSERVATION  (policy: always MOVE_FORWARD)")
 print("=" * 70)
 
 movement_count = 0
-conflict_count = 0
-completed_trains = set()
+blocked_count = 0              # train-steps spent blocked by another train
+departed_trains = set()
+arrived_trains = {}            # handle -> arrival step
+deadlocked_trains = {}         # handle -> step the deadlock was detected
 
-previous_positions = {
-    agent.handle: getattr(agent, "position", None)
-    for agent in env.agents
-}
-
-
-# ------------------------------------------------------------
-# 8. Run Multi-Train Simulation
-# ------------------------------------------------------------
-
-for step in range(1, MAX_STEPS + 1):
-
-    # --------------------------------------------------------
-    # Select actions
-    # --------------------------------------------------------
-    # Flatland actions:
-    # 0 = DO_NOTHING
-    # 1 = MOVE_LEFT
-    # 2 = MOVE_FORWARD
-    # 3 = MOVE_RIGHT
-    # 4 = STOP_MOVING
-
-    actions = {}
-
-    for agent in env.agents:
-        actions[agent.handle] = 2
+previous_positions = {agent.handle: train_position(agent) for agent in env.agents}
 
 
-    # --------------------------------------------------------
-    # Execute simulation step
-    # --------------------------------------------------------
+for step in range(1, max_steps + 1):
 
+    actions = {handle: RailEnvActions.MOVE_FORWARD for handle in env.get_agent_handles()}
     obs, rewards, dones, info = env.step(actions)
 
-
-    # --------------------------------------------------------
-    # IMPORTANT:
-    # Check whether Flatland has ended the episode.
-    # This prevents:
-    # "Episode is done, cannot call step()"
-    # --------------------------------------------------------
-
-    episode_done = dones.get("__all__", False)
-
-
-    # --------------------------------------------------------
-    # Get current train positions
-    # --------------------------------------------------------
-
-    current_positions = {}
+    events = []
+    occupied_cells = {
+        train_position(agent): agent.handle
+        for agent in env.agents
+        if train_position(agent) is not None
+    }
 
     for agent in env.agents:
+        handle = agent.handle
+        position = train_position(agent)
+        previous = previous_positions[handle]
 
-        current_positions[agent.handle] = getattr(
-            agent,
-            "position",
-            None
-        )
+        if previous is None and position is not None and handle not in departed_trains:
+            departed_trains.add(handle)
+            events.append(f"Train {handle} departed from {position}")
 
-
-    # --------------------------------------------------------
-    # Detect train movement
-    # --------------------------------------------------------
-
-    moved_this_step = []
-
-    for handle, current_position in current_positions.items():
-
-        previous_position = previous_positions.get(handle)
-
-        if (
-            current_position is not None
-            and current_position != previous_position
-        ):
-
-            moved_this_step.append(handle)
+        if position is not None and previous is not None and position != previous:
             movement_count += 1
 
+        if agent.state == TrainState.DONE and handle not in arrived_trains:
+            arrived_trains[handle] = step
+            late = step - agent.latest_arrival
+            timing = f"{late} steps late" if late > 0 else "on time"
+            events.append(f"Train {handle} reached its target ({timing})")
 
-    # --------------------------------------------------------
-    # Detect shared railway resources
-    # --------------------------------------------------------
-
-    position_to_trains = {}
-
-    for handle, position in current_positions.items():
-
-        if position is not None:
-
-            if position not in position_to_trains:
-                position_to_trains[position] = []
-
-            position_to_trains[position].append(handle)
-
-
-    # --------------------------------------------------------
-    # Identify potential conflicts
-    # --------------------------------------------------------
-
-    step_conflicts = []
-
-    for position, trains in position_to_trains.items():
-
-        if len(trains) > 1:
-
-            step_conflicts.append(
-                (position, trains)
-            )
-
-
-    # --------------------------------------------------------
-    # Display movement
-    # --------------------------------------------------------
-
-    if moved_this_step:
-
-        print(
-            f"\nStep {step}: "
-            f"Moving trains = {moved_this_step}"
-        )
-
-
-    # --------------------------------------------------------
-    # Display resource conflicts
-    # --------------------------------------------------------
-
-    if step_conflicts:
-
-        conflict_count += len(step_conflicts)
-
-        print(
-            f"  RESOURCE CONFLICTS DETECTED: "
-            f"{len(step_conflicts)}"
-        )
-
-        for position, trains in step_conflicts:
-
-            print(
-                f"    Shared cell {position} "
-                f"occupied by trains {trains}"
-            )
-
-
-    # --------------------------------------------------------
-    # Detect trains reaching their targets
-    # --------------------------------------------------------
-
-    for agent in env.agents:
-
-        current_position = getattr(
-            agent,
-            "position",
-            None
-        )
-
-        target_position = getattr(
-            agent,
-            "target",
-            None
-        )
-
+        # Blocked: on the map, not broken down, but did not move this step.
         if (
-            current_position is not None
-            and target_position is not None
-            and current_position == target_position
-            and agent.handle not in completed_trains
+            position is not None
+            and position == previous
+            and agent.state != TrainState.MALFUNCTION
+            and handle not in deadlocked_trains
         ):
+            blocked_count += 1
 
-            completed_trains.add(agent.handle)
+        previous_positions[handle] = position
 
-            print(
-                f"  Train {agent.handle} "
-                f"reached its target."
+    for handle in sorted(find_deadlocked_trains(env)):
+        if handle not in deadlocked_trains:
+            deadlocked_trains[handle] = step
+            events.append(
+                f"DEADLOCK: Train {handle} can no longer move "
+                f"(at {train_position(env.agents[handle])})"
             )
 
+    if events:
+        print(f"\nStep {step}:")
+        for event in events:
+            print(f"  {event}")
 
-    # --------------------------------------------------------
-    # Update previous positions
-    # --------------------------------------------------------
-
-    previous_positions = current_positions.copy()
-
-
-    # --------------------------------------------------------
-    # STOP CONDITION
-    # --------------------------------------------------------
-    # Flatland tells us the episode is finished through
-    # dones["__all__"]. We must break BEFORE calling
-    # env.step() again.
-
-    if episode_done:
-
-        print(
-            f"\nEpisode completed by Flatland "
-            f"at simulation step {step}."
-        )
-
+    if dones["__all__"]:
+        print(f"\nEpisode ended by Flatland at step {step}.")
         break
 
 
-# ------------------------------------------------------------
-# 9. Study Summary
-# ------------------------------------------------------------
+never_departed = [a.handle for a in env.agents if a.handle not in departed_trains]
 
-print("\n")
+print("\n" + "=" * 70)
+print("RESOURCE-CONFLICT STUDY SUMMARY")
 print("=" * 70)
-print("INITIAL RESOURCE-CONFLICT STUDY SUMMARY")
-print("=" * 70)
-
-print(f"Simulation steps executed : {step}")
-print(f"Train movements observed  : {movement_count}")
-print(f"Resource conflicts found  : {conflict_count}")
-print(f"Completed trains           : {len(completed_trains)}")
-
-
-# ------------------------------------------------------------
-# 10. Research Observations
-# ------------------------------------------------------------
+print(f"Simulation steps executed   : {step}")
+print(f"Cell-to-cell movements      : {movement_count}")
+print(f"Train-steps spent blocked   : {blocked_count}")
+print(f"Trains departed             : {len(departed_trains)} / {CONFIG.num_trains}")
+print(f"Trains reached target       : {len(arrived_trains)} / {CONFIG.num_trains}")
+print(f"Trains deadlocked           : {len(deadlocked_trains)} / {CONFIG.num_trains}")
+if deadlocked_trains:
+    print(f"First deadlock at step      : {min(deadlocked_trains.values())}")
+if never_departed:
+    print(f"Trains that never departed  : {never_departed}")
 
 print("\nOBSERVATIONS")
 print("-" * 70)
-
-print("1. Multiple trains were simulated simultaneously.")
-print("2. Train positions were monitored at every time step.")
-print("3. Railway cells were treated as shared resources.")
-print("4. Potential shared-resource conflicts were monitored.")
-print("5. Train movement and target completion were recorded.")
-print("6. These interactions motivate coordinated train")
-print("   movement and dynamic rescheduling.")
-
-
-# ------------------------------------------------------------
-# 11. Close Environment
-# ------------------------------------------------------------
-
-# env.close()
-
-print("\nInitial train movement and resource-conflict study completed.")
+print("1. Two trains can never share a cell; conflicts appear as")
+print("   blocking (waiting for a cell) and deadlocks (permanent).")
+print("2. With no dispatcher logic, trains facing each other on a")
+print("   single track deadlock and every train behind them is stuck.")
+print("3. This motivates coordinated decisions: hold, proceed,")
+print("   reroute and reorder.")

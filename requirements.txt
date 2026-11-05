@@ -1,0 +1,7 @@
+# Tested with Python 3.13 on Linux.
+# flatland-rl 4.x changed the agent API (no more agent.position);
+# the code in this repo is written for this exact version.
+flatland-rl==4.3.0
+
+# For running the checks in tests/
+pytest==9.2.0
