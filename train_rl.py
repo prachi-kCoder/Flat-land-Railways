@@ -244,7 +244,12 @@ def main():
     print(f"Task: {args.task}")
     print(f"Training scenarios: {len(train_seeds)} (seeds {train_seeds[0]}..{train_seeds[-1]})")
     print(f"Validation scenarios: {len(val_seeds)} (seeds {val_seeds[0]}..{val_seeds[-1]})")
-    print(f"Conditions: {TRAIN_TRAINS} trains, {TRAIN_DISRUPTIONS}", flush=True)
+    if task.get("env_kwargs", {}).get("mixed"):
+        print(f"Conditions: mixed per episode, trains {StrategyEnv.MIXED_TRAINS}, breakdown steps "
+              f"{StrategyEnv.MIXED_DURATIONS}, breakdowns {StrategyEnv.MIXED_COUNTS}; "
+              f"validation on {TRAIN_TRAINS} trains, {TRAIN_DISRUPTIONS}", flush=True)
+    else:
+        print(f"Conditions: {TRAIN_TRAINS} trains, {TRAIN_DISRUPTIONS}", flush=True)
 
     vec_env = make_vec_env(
         task["env"], n_envs=args.envs, seed=args.seed, vec_env_cls=SubprocVecEnv,
