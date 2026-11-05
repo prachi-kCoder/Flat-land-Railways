@@ -3,5 +3,12 @@
 # the code in this repo is written for this exact version.
 flatland-rl==4.3.0
 
+# Reinforcement learning (railsim/rl_dispatch.py, train_rl.py).
+# CPU-only torch is enough; to avoid the large GPU build install it first with
+#   pip install torch==2.15.0 --index-url https://download.pytorch.org/whl/cpu
+torch==2.15.0
+stable-baselines3==2.9.2
+gymnasium==1.4.0
+
 # For running the checks in tests/
 pytest==9.2.0

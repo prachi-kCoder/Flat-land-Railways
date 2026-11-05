@@ -75,6 +75,7 @@ def run_episode(config: EnvConfig, policy_class, disruptions: DisruptionSpec = N
         arrived=len(arrived),
         arrived_on_time=sum(a.arrival_time <= a.latest_arrival for a in arrived),
         deadlocked=len(find_deadlocked_trains(env)),
+        cancelled=sum(a.state.is_off_map_state() for a in env.agents),
         first_deadlock_step=stats["first_deadlock_step"],
         total_delay=sum(delays),
         mean_delay=round(sum(delays) / len(delays), 2),
