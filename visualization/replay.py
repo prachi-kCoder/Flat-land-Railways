@@ -226,22 +226,22 @@ def _run_episode(config, disruption_spec, policy_name, model, record=False):
                 if "MALFUNCTION" in after and "MALFUNCTION" not in before:
                     events.append({
                         "step": step, "kind": "breakdown", "train": handle,
-                        "message": f"Train {handle} entered malfunction state",
+                        "message": f"Train {handle + 1} entered malfunction state",
                     })
                 if previous_malfunctions[handle] > 0 and current_malfunctions[handle] == 0:
                     events.append({
                         "step": step, "kind": "recovery", "train": handle,
-                        "message": f"Train {handle} malfunction period ended",
+                        "message": f"Train {handle + 1} malfunction period ended",
                     })
                 if before != "DONE" and after == "DONE":
                     events.append({
                         "step": step, "kind": "arrival", "train": handle,
-                        "message": f"Train {handle} reached its target",
+                        "message": f"Train {handle + 1} reached its destination",
                     })
                 if previous_positions[handle] is None and current_positions[handle] is not None:
                     events.append({
                         "step": step, "kind": "departure", "train": handle,
-                        "message": f"Train {handle} entered the network",
+                        "message": f"Train {handle + 1} entered the network",
                     })
 
             for disruption, status in env.disruption_status.applied.items():
@@ -249,9 +249,9 @@ def _run_episode(config, disruption_spec, policy_name, model, record=False):
                 if key not in applied_seen:
                     applied_seen.add(key)
                     label = {
-                        "on_map": f"Train {disruption.train} broke down on the network",
-                        "off_map": f"Train {disruption.train} breakdown delayed its departure",
-                        "skipped": f"Train {disruption.train} breakdown was skipped (already arrived)",
+                        "on_map": f"Train {disruption.train + 1} broke down on the network",
+                        "off_map": f"Train {disruption.train + 1} breakdown delayed its departure",
+                        "skipped": f"Train {disruption.train + 1} breakdown was skipped (already arrived)",
                     }.get(status, f"Train {disruption.train + 1}: {status}")
                     events.append({
                         "step": int(disruption.start_step), "kind": "disruption",
