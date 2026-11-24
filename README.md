@@ -323,3 +323,16 @@ python -m pytest tests/
 
 - Flatland sets the episode length itself from the timetable (for example 98 steps for 5 trains, seed 42).
 - For some seeds Flatland cannot fit 3 cities on a 30x30 grid and warns that it is switching to grid mode or placing fewer cities. The scenario still runs, but its layout differs from the others.
+
+## Visualize a railway episode
+
+Create an interactive, offline HTML replay of a real simulation run:
+
+```bash
+python visualize.py --policy mappo --model models/mappo_seed1.pt --trains 8 --seed 42 --disruptions 1 --duration 20
+```
+
+The replay shows the Flatland network, train movement, breakdown and recovery
+events, policy decisions, and delay over time. It supports MAPPO, the PPO
+strategy selector, and existing rule-based baselines. See
+[`visualization/README.md`](visualization/README.md) for all options.
