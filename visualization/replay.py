@@ -86,11 +86,13 @@ def _train_snapshot(agent):
     config = agent.initial_configuration
     start = list(config[0]) if config and config[0] is not None else None
     target = list(agent.target) if agent.target is not None else None
+    current = agent.current_configuration if _position(agent) is not None else config
+    direction = int(current[1]) if current is not None else None
     return {
         "id": int(agent.handle),
         "state": _state_name(agent),
         "position": _position(agent),
-        "direction": int(agent.direction) if getattr(agent, "direction", None) is not None else None,
+        "direction": direction,
         "start": start,
         "target": target,
         "malfunction": int(agent.malfunction_handler.malfunction_down_counter),
@@ -179,6 +181,7 @@ def _run_episode(config, disruption_spec, policy_name, model, record=False):
     frames = [_snapshot(env, env._elapsed_steps)] if record else []
     delay_curve = []
     previous_states = [_state_name(agent) for agent in env.agents]
+    previous_positions = [_position(agent) for agent in env.agents]
     previous_malfunctions = [
         int(agent.malfunction_handler.malfunction_down_counter) for agent in env.agents
     ]
@@ -201,6 +204,7 @@ def _run_episode(config, disruption_spec, policy_name, model, record=False):
         done = bool(dones["__all__"])
         step = int(env._elapsed_steps)
         current_states = [_state_name(agent) for agent in env.agents]
+        current_positions = [_position(agent) for agent in env.agents]
         current_malfunctions = [
             int(agent.malfunction_handler.malfunction_down_counter) for agent in env.agents
         ]
@@ -222,7 +226,7 @@ def _run_episode(config, disruption_spec, policy_name, model, record=False):
                         "step": step, "kind": "arrival", "train": handle,
                         "message": f"Train {handle} reached its target",
                     })
-                if before in ("READY_TO_DEPART", "WAITING", "STOPPED") and _position(env.agents[handle]) is not None:
+                if previous_positions[handle] is None and current_positions[handle] is not None:
                     events.append({
                         "step": step, "kind": "departure", "train": handle,
                         "message": f"Train {handle} entered the network",
@@ -244,6 +248,7 @@ def _run_episode(config, disruption_spec, policy_name, model, record=False):
                     })
 
         previous_states = current_states
+        previous_positions = current_positions
         previous_malfunctions = current_malfunctions
         delay_curve.append(int(network_delay(env)))
         if record:
