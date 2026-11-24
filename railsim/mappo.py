@@ -181,6 +181,10 @@ class MAPPODispatcher(ReleaseDispatcher):
 
     def decide(self, env, now, handle):
         per_train_obs = observation(env, self, handle, now)
+
         with torch.no_grad():
-            logits = self.actor()(torch.as_tensor(per_train_obs, dtype=torch.float32).unsqueeze(0))
-            return int(torch.argmax(logits, dim=-1).item())
+            logits = self.actor()(
+                torch.as_tensor(per_train_obs, dtype=torch.float32).unsqueeze(0)
+            )
+            dist = Categorical(logits=logits)
+            return int(dist.sample().item())
