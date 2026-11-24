@@ -31,8 +31,10 @@ Use `--output path/to/replay.html` to choose a different location or
 ## Playback
 
 - Play/pause, previous/next step, timeline scrubbing, and playback speed.
-- Train positions, target markers, malfunction highlighting, and train states.
-- Breakdown, recovery, arrival, planner-replan, and policy-decision event logs.
+- Train positions, origin markers for trains waiting to depart, destination markers colour-matched to each train, malfunction highlighting, and readable train states.
+- One-based display labels (Train 1, Train 2, ...) while preserving Flatland's zero-based IDs internally.
+- Live per-step arrivals, delay, on-track and malfunction counts, shown separately from final episode results.
+- Breakdown, recovery, arrival, planner-replan, and policy-decision event logs, with a compact per-step WAIT/DISPATCH summary.
 - Network-delay curve for the disrupted run.
 - Final arrival, delay, deadlock, and recovery metrics.
 
