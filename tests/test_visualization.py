@@ -23,6 +23,11 @@ def test_replay_html_embeds_data_and_controls():
     assert "Railway network" in html
     assert 'id="timeline"' in html
     assert "Policy decisions" in html
+    assert "Live simulation status" in html
+    assert "Final episode results" in html
+    assert "Hollow marker = waiting at start" in html
+    assert 'id="decisionSummary"' in html
+    assert 'id="onTrack"' in html
 
 
 def test_replay_html_escapes_script_closing_sequences():
