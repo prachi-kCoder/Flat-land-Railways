@@ -48,7 +48,7 @@ def _track_geometry(env):
     for row in range(height):
         for col in range(width):
             for incoming in range(4):
-                transitions = rail.get_transitions(row, col, incoming)
+                transitions = rail.get_transitions(((row, col), incoming))
                 for outgoing, enabled in enumerate(transitions):
                     if not enabled:
                         continue
@@ -79,8 +79,25 @@ def _track_geometry(env):
 
 def _train_snapshot(agent):
     config = agent.initial_configuration
-    start = [int(value) for value in config[0]] if config and config[0] is not None else None
-    target = [int(value) for value in agent.target] if agent.target is not None else None
+    start = (
+        [int(value) for value in config[0]]
+        if config and config[0] is not None
+        else None
+    )
+    target = getattr(agent, "target", None)
+    if target is None:
+        target_configuration = getattr(agent, "target_configuration", None)
+        if target_configuration is not None:
+            target = target_configuration[0]
+        else:
+            targets = getattr(agent, "targets", ())
+            target_positions = sorted({
+                tuple(configuration[0])
+                for configuration in targets
+                if configuration[0] is not None
+            })
+            target = target_positions[0] if target_positions else None
+    target = [int(value) for value in target] if target is not None else None
     current = agent.current_configuration if _position(agent) is not None else config
     direction = int(current[1]) if current is not None else None
     return {
@@ -235,7 +252,7 @@ def _run_episode(config, disruption_spec, policy_name, model, record=False):
                         "on_map": f"Train {disruption.train} broke down on the network",
                         "off_map": f"Train {disruption.train} breakdown delayed its departure",
                         "skipped": f"Train {disruption.train} breakdown was skipped (already arrived)",
-                    }.get(status, f"Train {disruption.train}: {status}")
+                    }.get(status, f"Train {disruption.train + 1}: {status}")
                     events.append({
                         "step": int(disruption.start_step), "kind": "disruption",
                         "train": int(disruption.train), "message": label,
@@ -322,7 +339,7 @@ button:hover{border-color:var(--accent)}input[type=range]{flex:1;min-width:120px
 <section class="panel">
 <h2>Railway network</h2>
 <canvas id="network" width="1000" height="720"></canvas>
-<div class="legend"><span><i style="background:#38bdf8"></i>Train</span><span><i style="background:#fb5555"></i>Malfunction</span><span><i style="background:#fbbf24"></i>Target</span><span>Track layout from Flatland transition map</span></div>
+<div class="legend"><span><i style="background:#38bdf8"></i>Moving train (colour identifies train)</span><span><i style="background:#fb5555"></i>Malfunction</span><span><i style="background:#38bdf8;border:2px solid #e6eef8"></i>Destination · same train colour</span><span>Hollow marker = waiting at start</span></div>
 <div class="controls">
 <button id="play">▶ Play</button><button id="prev">◀ Step</button><button id="next">Step ▶</button>
 <input id="timeline" type="range" min="0" max="0" value="0">
@@ -333,15 +350,17 @@ button:hover{border-color:var(--accent)}input[type=range]{flex:1;min-width:120px
 <p class="notice">This is a replay of recorded simulator states, not a separately generated animation. Playback speed does not affect simulation results.</p>
 </section>
 <aside style="display:flex;flex-direction:column;gap:16px">
-<section class="panel"><h2>Episode metrics</h2><div class="metrics">
-<div class="metric"><strong id="arrived">—</strong><span>Trains arrived</span></div>
-<div class="metric"><strong id="delay">—</strong><span>Final network delay</span></div>
-<div class="metric"><strong id="deadlocked">—</strong><span>Deadlocked trains</span></div>
-<div class="metric"><strong id="recovery">—</strong><span>Recovery time (steps)</span></div>
-</div><div class="muted" id="disruptionSummary"></div></section>
+<section class="panel"><h2>Live simulation status</h2><div class="metrics">
+<div class="metric"><strong id="arrived">—</strong><span>Arrived at this step</span></div>
+<div class="metric"><strong id="delay">—</strong><span>Network delay now</span></div>
+<div class="metric"><strong id="onTrack">—</strong><span>Trains on track</span></div>
+<div class="metric"><strong id="malfunctioning">—</strong><span>Malfunctioning now</span></div>
+</div><h2 style="margin-top:14px">Final episode results</h2>
+<div class="muted" id="finalSummary"></div>
+<div class="muted" id="disruptionSummary" style="margin-top:8px"></div></section>
 <section class="panel"><h2>Train status</h2><div id="trains"></div></section>
 <section class="panel"><h2>Simulation & policy events</h2><div id="events"></div></section>
-<section class="panel"><h2>Policy decisions</h2><div id="decisions"></div></section>
+<section class="panel"><h2>Policy decisions</h2><div class="muted" id="decisionSummary"></div><div id="decisions" style="margin-top:8px"></div></section>
 </aside>
 </main>
 <script>
@@ -351,12 +370,12 @@ const frames = DATA.frames, geometry = DATA.geometry, summary = DATA.summary;
 const $ = id => document.getElementById(id);
 let index = 0, timer = null;
 $("subtitle").textContent = summary.policy.toUpperCase()+" · "+summary.trains+" trains · seed "+summary.seed+" · "+summary.steps+" simulation steps";
-$("arrived").textContent = summary.arrived+"/"+summary.trains;
-$("delay").textContent = summary.final_delay;
-$("deadlocked").textContent = summary.deadlocked;
-$("recovery").textContent = DATA.recovery_steps === null ? "Not reached" : (DATA.recovery_steps === undefined ? "—" : DATA.recovery_steps);
+$("finalSummary").textContent =
+  summary.arrived+"/"+summary.trains+" arrived · final delay "+summary.final_delay+
+  " · "+summary.deadlocked+" deadlocked · recovery "+
+  (DATA.recovery_steps === null ? "not reached" : (DATA.recovery_steps === undefined ? "unavailable" : DATA.recovery_steps+" steps"));
 $("disruptionSummary").textContent = summary.disruption_plan.length
-  ? summary.disruption_plan.map(d=>"Train "+d.train+" · step "+d.start_step+" · "+d.duration+" steps").join("\n")
+  ? summary.disruption_plan.map(d=>"Train "+(d.train+1)+" · breakdown at step "+d.start_step+" · "+d.duration+" steps").join("\n")
   : "No disruptions in this scenario";
 $("timeline").max = Math.max(0,frames.length-1);
 function point(pos, ox, oy, cell){return [ox+(pos[1]+.5)*cell,oy+(pos[0]+.5)*cell]}
@@ -369,15 +388,36 @@ function drawNetwork(frame){
   for(const edge of geometry.edges){const a=point(edge[0],ox,oy,cell),b=point(edge[1],ox,oy,cell);ctx.beginPath();ctx.moveTo(...a);ctx.lineTo(...b);ctx.stroke()}
   if(!geometry.edges.length){ctx.fillStyle="#64748b";for(const p of geometry.cells){const q=point(p,ox,oy,cell);ctx.beginPath();ctx.arc(q[0],q[1],Math.max(2,cell*.12),0,Math.PI*2);ctx.fill()}}
   for(const train of DATA.initial_trains){
-    if(train.target){const q=point(train.target,ox,oy,cell);ctx.fillStyle="#fbbf24";ctx.globalAlpha=.85;ctx.fillRect(q[0]-cell*.18,q[1]-cell*.18,cell*.36,cell*.36);ctx.globalAlpha=1}
+    const color=COLORS[train.id%COLORS.length];
+    if(train.target){
+      const q=point(train.target,ox,oy,cell);
+      ctx.strokeStyle=color;ctx.lineWidth=Math.max(3,cell*.12);
+      ctx.beginPath();ctx.arc(q[0],q[1],Math.max(8,cell*.27),0,Math.PI*2);ctx.stroke();
+      ctx.fillStyle=color;ctx.font="bold "+Math.max(9,cell*.22)+"px Arial";
+      ctx.textAlign="left";ctx.textBaseline="middle";
+      ctx.fillText("D"+(train.id+1),q[0]+cell*.32,q[1]);
+    }
   }
   for(const train of frame.trains){
-    if(!train.position)continue;
-    const q=point(train.position,ox,oy,cell),color=COLORS[train.id%COLORS.length];
+    const color=COLORS[train.id%COLORS.length];
     const broken=train.malfunction>0||train.state.includes("MALFUNCTION");
+    if(!train.position){
+      if(train.start && train.state!=="DONE"){
+        const q=point(train.start,ox,oy,cell);
+        ctx.strokeStyle=color;ctx.lineWidth=3;ctx.beginPath();
+        ctx.arc(q[0],q[1],Math.max(8,cell*.29),0,Math.PI*2);ctx.stroke();
+        ctx.fillStyle="#0c1525";ctx.beginPath();
+        ctx.arc(q[0],q[1],Math.max(5,cell*.19),0,Math.PI*2);ctx.fill();
+        ctx.fillStyle=color;ctx.font="bold "+Math.max(9,cell*.2)+"px Arial";
+        ctx.textAlign="left";ctx.textBaseline="middle";
+        ctx.fillText("T"+(train.id+1),q[0]+cell*.34,q[1]);
+      }
+      continue;
+    }
+    const q=point(train.position,ox,oy,cell);
     if(broken){ctx.strokeStyle="#fb5555";ctx.lineWidth=5;ctx.beginPath();ctx.arc(q[0],q[1],cell*.42,0,Math.PI*2);ctx.stroke()}
     ctx.fillStyle=color;ctx.beginPath();ctx.arc(q[0],q[1],Math.max(8,cell*.29),0,Math.PI*2);ctx.fill();
-    ctx.fillStyle="#08111f";ctx.font="bold "+Math.max(9,cell*.24)+"px Arial";ctx.textAlign="center";ctx.textBaseline="middle";ctx.fillText("T"+train.id,q[0],q[1]);
+    ctx.fillStyle="#08111f";ctx.font="bold "+Math.max(9,cell*.24)+"px Arial";ctx.textAlign="center";ctx.textBaseline="middle";ctx.fillText("T"+(train.id+1),q[0],q[1]);
     if(broken){ctx.fillStyle="#fecaca";ctx.font="bold 13px Arial";ctx.fillText("!",q[0]+cell*.35,q[1]-cell*.35)}
   }
 }
@@ -404,19 +444,36 @@ function phaseFor(frame){
   if(pending)return "DISRUPTION WINDOW";
   return frame.arrived===summary.trains?"ALL TRAINS ARRIVED":"RECOVERY / RESUMPTION";
 }
+function humanState(train){
+  if(train.malfunction>0||train.state.includes("MALFUNCTION"))
+    return "Breakdown · "+train.malfunction+" steps remaining";
+  const labels={READY_TO_DEPART:"Waiting to depart",WAITING:"Waiting",ACTIVE:"Moving",DONE:"Arrived",DONE_REMOVED:"Arrived"};
+  return labels[train.state]||train.state.replaceAll("_"," ").toLowerCase();
+}
 function render(){
   const frame=frames[index];$("timeline").value=index;$("stepLabel").textContent="Step "+frame.step+" / "+summary.steps;
   $("phase").textContent=phaseFor(frame);drawNetwork(frame);drawDelay(index);
+  $("arrived").textContent=frame.arrived+"/"+summary.trains;
+  $("delay").textContent=frame.delay;
+  $("onTrack").textContent=frame.on_track+"/"+summary.trains;
+  $("malfunctioning").textContent=frame.malfunctioning;
   $("trains").innerHTML=frame.trains.map(t=>{
-    const color=COLORS[t.id%COLORS.length],pos=t.position?"("+t.position.join(", ")+")":"Off map";
-    const status=t.malfunction>0?"MALFUNCTION · "+t.malfunction+" left":t.state;
-    return '<div class="train"><span><i class="dot" style="background:'+color+'"></i>Train '+t.id+'<br><span class="muted">'+pos+'</span></span><b>'+status+'</b></div>';
+    const color=COLORS[t.id%COLORS.length],pos=t.position?"("+t.position.join(", ")+")":"At start · not on track";
+    return '<div class="train"><span><i class="dot" style="background:'+color+'"></i>Train '+(t.id+1)+'<br><span class="muted">'+pos+'</span></span><b>'+humanState(t)+'</b></div>';
   }).join("");
   const visible=DATA.events.filter(e=>e.step<=frame.step).slice(-14).reverse();
   $("events").innerHTML=visible.length?visible.map(e=>'<div class="event"><small>Step '+e.step+' · '+e.kind.toUpperCase()+'</small>'+e.message+'</div>').join(""):'<div class="muted">No events recorded yet.</div>';
-  const decisions=DATA.decisions.filter(d=>d.step<=frame.step).slice(-14).reverse();
-  $("decisions").innerHTML=decisions.length?decisions.map(d=>{
-    const label=d.action==="SELECT_ORDERING"?"Selected ordering: "+d.choice:"Train "+d.train+" → "+d.action;
+  const decisions=DATA.decisions.filter(d=>d.step<=frame.step);
+  const atStep=decisions.filter(d=>d.step===frame.step);
+  const waits=atStep.filter(d=>d.action==="WAIT").length;
+  const dispatched=atStep.filter(d=>d.action==="DISPATCH").length;
+  const ordering=atStep.filter(d=>d.action==="SELECT_ORDERING");
+  $("decisionSummary").textContent=atStep.length
+    ? (waits+" waiting · "+dispatched+" dispatched"+(ordering.length?" · ordering: "+ordering.map(d=>d.choice).join(", "):""))
+    : "No policy decision recorded at this exact step.";
+  const recent=decisions.slice(-14).reverse();
+  $("decisions").innerHTML=recent.length?recent.map(d=>{
+    const label=d.action==="SELECT_ORDERING"?"Selected ordering: "+d.choice:"Train "+(d.train+1)+" → "+(d.action==="WAIT"?"Wait":"Dispatch");
     return '<div class="event"><small>Step '+d.step+'</small>'+label+'</div>';
   }).join(""):'<div class="muted">No policy decisions recorded yet.</div>';
 }
