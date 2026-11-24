@@ -8,7 +8,6 @@ from __future__ import annotations
 
 import argparse
 import json
-import os
 import webbrowser
 from pathlib import Path
 
@@ -22,10 +21,6 @@ from railsim.train_status import find_deadlocked_trains
 
 
 DIRECTIONS = ((-1, 0), (0, 1), (1, 0), (0, -1))
-TRAIN_COLORS = ["#38bdf8", "#34d399", "#fbbf24", "#c084fc", "#fb7185",
-                "#2dd4bf", "#f97316", "#a3e635", "#60a5fa", "#e879f9"]
-
-
 def _state_name(agent):
     state = agent.state
     return getattr(state, "name", str(state).split(".")[-1])
