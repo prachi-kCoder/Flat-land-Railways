@@ -84,8 +84,8 @@ def _track_geometry(env):
 
 def _train_snapshot(agent):
     config = agent.initial_configuration
-    start = list(config[0]) if config and config[0] is not None else None
-    target = list(agent.target) if agent.target is not None else None
+    start = [int(value) for value in config[0]] if config and config[0] is not None else None
+    target = [int(value) for value in agent.target] if agent.target is not None else None
     current = agent.current_configuration if _position(agent) is not None else config
     direction = int(current[1]) if current is not None else None
     return {
