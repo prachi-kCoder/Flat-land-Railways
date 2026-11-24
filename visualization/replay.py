@@ -464,13 +464,16 @@ function render(){
   const visible=DATA.events.filter(e=>e.step<=frame.step).slice(-14).reverse();
   $("events").innerHTML=visible.length?visible.map(e=>'<div class="event"><small>Step '+e.step+' · '+e.kind.toUpperCase()+'</small>'+e.message+'</div>').join(""):'<div class="muted">No events recorded yet.</div>';
   const decisions=DATA.decisions.filter(d=>d.step<=frame.step);
-  const atStep=decisions.filter(d=>d.step===frame.step);
+  // Policy actions are recorded immediately before env.step(), so the state
+  // shown at frame N follows decisions made at simulation step N-1.
+  const decisionStep=frame.step-1;
+  const atStep=decisionStep<0?[]:decisions.filter(d=>d.step===decisionStep);
   const waits=atStep.filter(d=>d.action==="WAIT").length;
   const dispatched=atStep.filter(d=>d.action==="DISPATCH").length;
   const ordering=atStep.filter(d=>d.action==="SELECT_ORDERING");
   $("decisionSummary").textContent=atStep.length
-    ? (waits+" waiting · "+dispatched+" dispatched"+(ordering.length?" · ordering: "+ordering.map(d=>d.choice).join(", "):""))
-    : "No policy decision recorded at this exact step.";
+    ? ("Step "+decisionStep+": "+waits+" waiting · "+dispatched+" dispatched"+(ordering.length?" · ordering: "+ordering.map(d=>d.choice).join(", "):""))
+    : "No policy decision recorded for the preceding step.";
   const recent=decisions.slice(-14).reverse();
   $("decisions").innerHTML=recent.length?recent.map(d=>{
     const label=d.action==="SELECT_ORDERING"?"Selected ordering: "+d.choice:"Train "+(d.train+1)+" → "+(d.action==="WAIT"?"Wait":"Dispatch");
