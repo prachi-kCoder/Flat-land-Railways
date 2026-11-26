@@ -52,9 +52,14 @@ BASELINES = [
 
 
 def rl_policy(path):
-    """A frozen RL policy class bound to one model file. The file name says
-    which task it was trained for: rl_strategy_* or rl_dispatcher_*."""
+    """A frozen RL policy class bound to one model file. The file says which
+    method it is: a MAPPO checkpoint (*.pt), or a PPO model (rl_strategy_*.zip
+    for strategy selection, rl_dispatcher_*.zip for departure control)."""
     stem = os.path.splitext(os.path.basename(path))[0]
+    if path.endswith(".pt"):
+        from railsim.mappo import MAPPODispatcher
+        return type(stem, (MAPPODispatcher,), {"name": stem, "model_path": path,
+                                                "_actor": None, "_loaded_from": None})
     base = RLStrategy if stem.startswith("rl_strategy") else RLDispatcher
     return type(stem, (base,), {"name": stem, "model_path": path, "_model": None, "_loaded_from": None})
 
@@ -82,6 +87,7 @@ def run_one(job):
     policy_class = policy_from_key(policy_key)
     import torch
     torch.set_num_threads(1)   # one process per core; avoid oversubscription
+    torch.manual_seed(seed)    # MAPPO samples its actions: same seed, same run
     trains, spec = conditions(shift, level)
     result = run_episode(EnvConfig(num_trains=trains, seed=seed), policy_class, spec)
     row = {"shift": shift, "level": level}
@@ -93,6 +99,8 @@ def main():
     parser = argparse.ArgumentParser(description="Degradation of frozen policies under shifted conditions.")
     parser.add_argument("--seeds", type=int, default=30, help="test scenarios per level (default 30)")
     parser.add_argument("--models", nargs="*", default=[], help="trained RL models to include")
+    parser.add_argument("--baselines", nargs="*",
+                        help="subset of baseline names; give none to run only --models (default: all)")
     parser.add_argument("--workers", type=int, default=4)
     parser.add_argument("--out", default="outputs/robustness.csv")
     args = parser.parse_args()
@@ -100,7 +108,8 @@ def main():
     for path in args.models:
         if not os.path.exists(path):
             parser.error(f"model not found: {path}")
-    policies = [p.name for p in BASELINES] + ["model:" + p for p in args.models]
+    names = [p.name for p in BASELINES] if args.baselines is None else args.baselines
+    policies = names + ["model:" + p for p in args.models]
     seeds = usable_seeds(EnvConfig(num_trains=TRAINING["trains"]), args.seeds, start=0)
     jobs = [
         (shift, level, policy, seed)

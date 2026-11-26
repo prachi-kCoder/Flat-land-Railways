@@ -70,6 +70,9 @@ def main():
     env = DispatchEnv(seeds, num_trains=args.trains,
                       disruptions=DisruptionSpec(count=1, duration=20))
     learner = MAPPO(args.trains, learning_rate=args.learning_rate)
+    # Seed the environment's scenario sampling once, so the same --seed
+    # gives the same training run (later resets continue this stream).
+    env.reset(seed=args.seed)
     episode_delays = []
     batch = []
     for episode in range(args.episodes):

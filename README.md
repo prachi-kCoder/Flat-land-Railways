@@ -150,6 +150,21 @@ python train_rl.py --task strategy --seed 1
 python run_experiment.py --policies priority greedy_select rl_strategy --model results/models/rl_strategy_seed1.zip
 ```
 
+**MAPPO** (`railsim/mappo.py`, `train_mappo.py`). A multi-agent take on the departure-control decision: every train ready to leave is an agent that chooses Dispatch or Wait. All trains share one actor network (it sees the same 13 numbers as the departure-control agent), and one centralized critic sees every train's numbers during training (centralized training, decentralized execution). It trains from scratch with the PPO clipped objective, no warm start. At run time the dispatcher samples its action from the policy; the experiment scripts and the visualizer seed PyTorch with the scenario seed, so every run repeats exactly.
+
+| Setting | Value |
+|---|---|
+| Training | 8 trains, 1 breakdown of 20 steps, 800 episodes on training seeds 1100 to 1899 (about 50 minutes on 1 CPU core) |
+| Networks | actor and critic: 2 hidden layers of 64 units (tanh) |
+| PPO update | every 4 episodes, 4 epochs, batch 128, learning rate 0.0003, clip 0.2, entropy 0.01, γ = 1, GAE λ = 0.95 |
+
+```bash
+python train_mappo.py --episodes 800 --trains 8 --seed 1 --output models/mappo_seed1.pt
+python run_robustness.py --seeds 30 --baselines --models results/models/mappo_seed1.pt --out outputs/robustness_mappo.csv
+```
+
+`--baselines` with no names runs only the given models, so new models can be added to the existing results without re-running every baseline.
+
 ### Robustness study
 
 `run_robustness.py` freezes the trained policies and changes one condition at a time away from training (8 trains, 1 breakdown of 20 steps):
@@ -324,12 +339,36 @@ python -m pytest tests/
 - Flatland sets the episode length itself from the timetable (for example 98 steps for 5 trains, seed 42).
 - For some seeds Flatland cannot fit 3 cities on a 30x30 grid and warns that it is switching to grid mode or placing fewer cities. The scenario still runs, but its layout differs from the others.
 
+### The four approaches side by side (FCFS, Priority, PPO, MAPPO)
+
+Mean total delay over the same 30 test scenarios (lower is better). PPO is `rl_strategy_seed1`; MAPPO is `mappo_seed1` (`results/robustness/robustness_mappo.csv`). No approach had a single deadlock.
+
+| Condition | FCFS | Priority | PPO | MAPPO |
+|---|---|---|---|---|
+| Training: 8 trains, 1 breakdown of 20 steps | 38.9 | 46.3 | **15.5** | 31.4 |
+| 12 trains | 58.8 | 90.2 | **26.0** | 44.5 |
+| 16 trains | 72.8 | 184.8 | **54.7** | 71.2 |
+| 20 trains | 119.5 | 371.1 | **75.0** | 226.3 |
+| 24 trains | **123.0** | 617.2 | 146.7 | 231.2 |
+| Breakdown of 10 steps | 19.9 | 42.0 | **8.7** | 21.6 |
+| Breakdown of 40 steps | 50.1 | 54.3 | **28.1** | 52.8 |
+| Breakdown of 60 steps | 76.7 | 77.8 | **49.9** | 75.7 |
+| Breakdown of 100 steps | 87.8 | 80.0 | **61.0** | 86.8 |
+| 2 breakdowns at once | 32.6 | 41.3 | **21.2** | 37.6 |
+| 3 breakdowns at once | 39.6 | 47.3 | **26.4** | 41.0 |
+| 4 breakdowns at once | 50.7 | 56.3 | **41.5** | 51.8 |
+
+MAPPO was never significantly better than the better of FCFS and Priority (paired Wilcoxon signed-rank test), and it was significantly worse than FCFS at 20 and 24 trains (p = 0.017 and 0.042). PPO was significantly better than the better rule in 10 of the 12 conditions, and than MAPPO in 10 of 12. With breakdown lengths from real data (`results/realdata/*/realdata_mappo.csv`), MAPPO again sat close to FCFS (no significant difference in any of the 12 settings), while PPO had the lowest delay in all of them.
+
 ## Visualize a railway episode
 
 Create an interactive, offline HTML replay of a real simulation run:
 
 ```bash
-python visualize.py --policy mappo --model models/mappo_seed1.pt --trains 8 --seed 42 --disruptions 1 --duration 20
+python visualize.py --policy mappo --trains 8 --seed 42 --disruptions 1 --duration 20
+
+# all four approaches on one screen, same scenario
+python visualize.py --compare fcfs priority ppo mappo --trains 8 --seed 28 --disruptions 1 --duration 20
 ```
 
 The replay shows the Flatland network, train movement, breakdown and recovery
