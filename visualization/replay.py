@@ -124,6 +124,46 @@ def _snapshot(env, step):
     }
 
 
+# Names shown to people, and fixed colours per approach (same in every view).
+DISPLAY_NAMES = {
+    "fcfs": "FCFS", "priority": "Priority", "edf": "EDF", "spf": "SPF",
+    "greedy_select": "Greedy rule selection", "release_all": "Release all",
+    "hold_if_blocked": "Hold if blocked", "rl_strategy": "PPO", "ppo": "PPO", "mappo": "MAPPO",
+}
+DESCRIPTIONS = {
+    "fcfs": "Rule: trains due to leave earlier book their route first",
+    "priority": "Rule: the train with the least spare time books first",
+    "edf": "Rule: earliest latest-arrival time books first",
+    "spf": "Rule: shortest remaining trip books first",
+    "greedy_select": "Tries four ordering rules at every re-plan, keeps the best plan",
+    "release_all": "Releases every ready train at once",
+    "hold_if_blocked": "Releases a ready train only if its route is free now",
+    "rl_strategy": "Learned (PPO): picks the ordering rule at every re-plan",
+    "ppo": "Learned (PPO): picks the ordering rule at every re-plan",
+    "mappo": "Learned (MAPPO): each ready train decides Dispatch or Wait",
+}
+COMPARE_COLOURS = {
+    "fcfs": "#338ced", "priority": "#e76624", "greedy_select": "#00a888",
+    "rl_strategy": "#d28e05", "ppo": "#d28e05", "mappo": "#e24d8b",
+}
+DEFAULT_PPO_MODEL = "results/models/rl_strategy_seed1.zip"
+
+
+def _default_mappo_model():
+    final = Path("results/models/mappo_seed1.pt")
+    return str(final) if final.exists() else "models/mappo_seed1.pt"
+
+
+def _seed_torch(seed):
+    """MAPPO samples its actions. Seeding torch before each run (as the
+    experiment scripts do) makes a replay repeat the evaluated run exactly."""
+    try:
+        import torch
+    except ImportError:
+        return
+    torch.manual_seed(seed)
+
+
 def _make_policy(name, model):
     from railsim.policies import FCFSDispatcher, PriorityDispatcher
     from railsim.rl_dispatch import HoldIfBlocked, ReleaseAll
@@ -140,11 +180,12 @@ def _make_policy(name, model):
     }
     if name == "mappo":
         from railsim.mappo import MAPPODispatcher
-        MAPPODispatcher.model_path = model or "models/mappo_seed1.pt"
+        MAPPODispatcher.model_path = model or _default_mappo_model()
         MAPPODispatcher._actor = None
         MAPPODispatcher._loaded_from = None
         return MAPPODispatcher()
-    if name == "rl_strategy":
+    if name in ("rl_strategy", "ppo"):
+        model = model or (DEFAULT_PPO_MODEL if name == "ppo" else None)
         if not model:
             raise ValueError("--model is required for --policy rl_strategy")
         RLStrategy.model_path = model
@@ -493,13 +534,253 @@ render();
     return template.replace("__DATA__", encoded)
 
 
+def _render_compare_html(payload):
+    """Side-by-side replay of several approaches on the same scenario, with
+    one shared timeline, live metrics per approach, one combined delay chart
+    and a final results table."""
+    encoded = json.dumps(payload, separators=(",", ":"), ensure_ascii=False).replace("</", "<\\/")
+    template = r"""<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Flatland Railways · Approach Comparison</title>
+<style>
+:root{color-scheme:dark;--bg:#0b1120;--panel:#121c2e;--line:#26364d;--muted:#91a4bd;--text:#e6eef8;--accent:#8b5cf6}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--text);font:14px/1.45 Inter,Segoe UI,Arial,sans-serif}
+header{padding:18px 24px;border-bottom:1px solid var(--line);display:flex;justify-content:space-between;gap:16px;align-items:center}
+h1{font-size:20px;margin:0}header p{margin:3px 0 0;color:var(--muted);font-size:12px}
+main{max-width:1600px;margin:auto;padding:16px;display:flex;flex-direction:column;gap:14px}
+.panel{background:var(--panel);border:1px solid var(--line);border-radius:13px;padding:14px;min-width:0}
+.panel h2{font-size:13px;text-transform:uppercase;letter-spacing:.08em;color:#b7c7dc;margin:0 0 10px}
+.controls{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+button,select{background:#1d2b42;color:var(--text);border:1px solid #344760;border-radius:7px;padding:8px 11px;cursor:pointer}
+button:hover{border-color:var(--accent)}input[type=range]{flex:1;min-width:120px;accent-color:var(--accent)}
+#stepLabel{color:var(--muted);font-variant-numeric:tabular-nums;min-width:90px}
+#phase{color:var(--muted);font-size:13px}
+.grid{display:grid;grid-template-columns:repeat(var(--cols),minmax(0,1fr));gap:14px}
+.card{background:var(--panel);border:1px solid var(--line);border-top:4px solid var(--c);border-radius:13px;padding:12px;min-width:0}
+.card h3{margin:0;font-size:16px;display:flex;align-items:center;gap:8px}.card h3 i{width:10px;height:10px;border-radius:50%;background:var(--c);display:inline-block}
+.card p{margin:2px 0 8px;color:var(--muted);font-size:12px;min-height:17px}
+canvas.net{width:100%;height:auto;display:block;background:#0c1525;border-radius:9px}
+.live{display:grid;grid-template-columns:repeat(4,1fr);gap:6px;margin-top:8px}
+.live div{background:#0c1525;border:1px solid var(--line);border-radius:8px;padding:7px}
+.live strong{display:block;font-size:18px;font-variant-numeric:tabular-nums}.live span{color:var(--muted);font-size:11px}
+.status{color:var(--muted);font-size:12px;margin-top:6px;min-height:17px}
+#delayChart{width:100%;height:auto;display:block;background:#0c1525;border-radius:8px}
+.legend{display:flex;gap:16px;flex-wrap:wrap;color:var(--text);font-size:12px;margin:0 0 8px}
+.legend span{display:flex;align-items:center;gap:6px}.legend i{display:inline-block;width:18px;height:3px;border-radius:2px}
+table{width:100%;border-collapse:collapse;font-variant-numeric:tabular-nums}
+th,td{padding:8px 10px;border-bottom:1px solid var(--line);text-align:right}th:first-child,td:first-child{text-align:left}
+th{color:var(--muted);font-weight:600;font-size:12px}tr.best td{font-weight:700}
+.notice{color:var(--muted);font-size:11px;margin:8px 2px 0}
+@media(max-width:1000px){.grid{grid-template-columns:1fr}.live{grid-template-columns:repeat(2,1fr)}header{flex-direction:column;align-items:flex-start}}
+</style>
+</head>
+<body>
+<header><div><h1>Flatland Railways · Approach Comparison</h1><p id="subtitle"></p></div><div id="phase"></div></header>
+<main>
+<section class="panel"><div class="controls">
+<button id="play">▶ Play</button><button id="prev">◀ Step</button><button id="next">Step ▶</button>
+<input id="timeline" type="range" min="0" max="0" value="0"><span id="stepLabel">Step 0</span>
+<select id="speed"><option value="1000">0.5×</option><option value="500" selected>1×</option><option value="200">2.5×</option><option value="80">5×</option></select>
+</div><p class="notice" id="breakdowns"></p></section>
+<section class="grid" id="cards"></section>
+<section class="panel"><h2>Network delay over time</h2><div class="legend" id="legend"></div>
+<canvas id="delayChart" width="1500" height="260"></canvas>
+<p class="notice">Network delay: how late all trains are (or will be at best) at that step. Lower is better. The dashed line is the current step; the shaded band is the breakdown.</p></section>
+<section class="panel"><h2>Final results (same scenario for every approach)</h2><table id="results"></table>
+<p class="notice">Extra delay from breakdowns = total delay of this run minus the same approach on the same scenario without any breakdown. This is a replay of recorded simulator states; playback speed does not change any result.</p></section>
+</main>
+<script>
+const DATA = __DATA__;
+const TRAIN_COLOURS = ["#38bdf8","#34d399","#fbbf24","#c084fc","#fb7185","#2dd4bf","#f97316","#a3e635","#60a5fa","#e879f9"];
+const runs = DATA.runs, geometry = DATA.geometry, plan = DATA.disruption_plan;
+const $ = id => document.getElementById(id);
+const last = Math.max(...runs.map(r => r.frames.length - 1));
+let index = 0, timer = null;
+$("subtitle").textContent = DATA.trains+" trains · scenario seed "+DATA.seed+" · "+
+  (plan.length ? plan.length+" breakdown"+(plan.length>1?"s":"")+" of "+plan.map(d=>d.duration).join(", ")+" steps" : "no breakdowns")+
+  " · every approach faces the same network, timetable and breakdowns";
+$("breakdowns").textContent = plan.length
+  ? plan.map(d=>"Breakdown: Train "+(d.train+1)+" stops at step "+d.start_step+" for "+d.duration+" steps").join(" · ")
+  : "No breakdowns in this scenario.";
+$("cards").style.setProperty("--cols", runs.length > 2 ? 2 : runs.length);
+$("cards").innerHTML = runs.map((r,i) =>
+  '<article class="card" style="--c:'+r.colour+'"><h3><i></i>'+r.name+'</h3><p>'+r.description+'</p>'+
+  '<canvas class="net" id="net'+i+'" width="900" height="620"></canvas>'+
+  '<div class="live"><div><strong id="arr'+i+'">-</strong><span>Arrived</span></div>'+
+  '<div><strong id="del'+i+'">-</strong><span>Delay now</span></div>'+
+  '<div><strong id="on'+i+'">-</strong><span>On track</span></div>'+
+  '<div><strong id="brk'+i+'">-</strong><span>Broken down</span></div></div>'+
+  '<div class="status" id="st'+i+'"></div></article>').join("");
+$("legend").innerHTML = runs.map(r => '<span><i style="background:'+r.colour+'"></i>'+r.name+'</span>').join("");
+$("timeline").max = last;
+function point(pos, ox, oy, cell){return [ox+(pos[1]+.5)*cell,oy+(pos[0]+.5)*cell]}
+function drawNetwork(canvas, frame){
+  const ctx=canvas.getContext("2d"),W=canvas.width,H=canvas.height;
+  ctx.clearRect(0,0,W,H);ctx.fillStyle="#0c1525";ctx.fillRect(0,0,W,H);
+  const cell=Math.min((W-40)/geometry.width,(H-40)/geometry.height);
+  const ox=(W-cell*geometry.width)/2,oy=(H-cell*geometry.height)/2;
+  ctx.strokeStyle="#34445b";ctx.lineWidth=Math.max(3,cell*.13);ctx.lineCap="round";
+  for(const e of geometry.edges){const a=point(e[0],ox,oy,cell),b=point(e[1],ox,oy,cell);ctx.beginPath();ctx.moveTo(...a);ctx.lineTo(...b);ctx.stroke()}
+  for(const t of DATA.initial_trains){
+    if(!t.target)continue;const c=TRAIN_COLOURS[t.id%TRAIN_COLOURS.length],q=point(t.target,ox,oy,cell);
+    ctx.strokeStyle=c;ctx.lineWidth=Math.max(2,cell*.1);ctx.beginPath();ctx.arc(q[0],q[1],Math.max(7,cell*.27),0,Math.PI*2);ctx.stroke();
+  }
+  for(const t of frame.trains){
+    const c=TRAIN_COLOURS[t.id%TRAIN_COLOURS.length],broken=t.malfunction>0||t.state.includes("MALFUNCTION");
+    if(!t.position){
+      if(t.start&&t.state!=="DONE"){const q=point(t.start,ox,oy,cell);ctx.strokeStyle=c;ctx.lineWidth=3;ctx.beginPath();ctx.arc(q[0],q[1],Math.max(7,cell*.29),0,Math.PI*2);ctx.stroke()}
+      continue;
+    }
+    const q=point(t.position,ox,oy,cell);
+    if(broken){ctx.strokeStyle="#fb5555";ctx.lineWidth=5;ctx.beginPath();ctx.arc(q[0],q[1],cell*.45,0,Math.PI*2);ctx.stroke()}
+    ctx.fillStyle=c;ctx.beginPath();ctx.arc(q[0],q[1],Math.max(7,cell*.31),0,Math.PI*2);ctx.fill();
+    ctx.fillStyle="#08111f";ctx.font="bold "+Math.max(8,cell*.26)+"px Arial";ctx.textAlign="center";ctx.textBaseline="middle";ctx.fillText(String(t.id+1),q[0],q[1]);
+  }
+}
+function drawDelay(){
+  const canvas=$("delayChart"),ctx=canvas.getContext("2d"),W=canvas.width,H=canvas.height;
+  ctx.clearRect(0,0,W,H);ctx.fillStyle="#0c1525";ctx.fillRect(0,0,W,H);
+  const left=50,right=16,top=14,bottom=30,steps=Math.max(1,last);
+  const max=Math.max(1,...runs.flatMap(r=>r.delay_curve));
+  const X=s=>left+(W-left-right)*s/steps, Y=v=>H-bottom-(H-top-bottom)*v/max;
+  for(const d of plan){ctx.fillStyle="rgba(251,85,85,.12)";ctx.fillRect(X(d.start_step),top,X(d.end_step+1)-X(d.start_step),H-top-bottom)}
+  ctx.strokeStyle="#25364d";ctx.lineWidth=1;ctx.fillStyle="#91a4bd";ctx.font="12px Arial";ctx.textAlign="right";ctx.textBaseline="middle";
+  for(let i=0;i<=4;i++){const v=Math.round(max*i/4),y=Y(v);ctx.beginPath();ctx.moveTo(left,y);ctx.lineTo(W-right,y);ctx.stroke();ctx.fillText(String(v),left-8,y)}
+  ctx.textAlign="center";ctx.textBaseline="top";
+  for(let i=0;i<=5;i++){const s=Math.round(steps*i/5);ctx.fillText(String(s),X(s),H-bottom+8)}
+  ctx.textAlign="right";ctx.textBaseline="bottom";ctx.fillText("Simulation step",W-right-4,H-bottom-4);
+  for(const r of runs){
+    ctx.strokeStyle=r.colour;ctx.lineWidth=2.5;ctx.beginPath();
+    r.delay_curve.forEach((v,i)=>{const x=X(i+1),y=Y(v);i?ctx.lineTo(x,y):ctx.moveTo(x,y)});ctx.stroke();
+    const n=r.delay_curve.length;if(n){ctx.fillStyle=r.colour;ctx.beginPath();ctx.arc(X(n),Y(r.delay_curve[n-1]),4,0,Math.PI*2);ctx.fill()}
+  }
+  ctx.strokeStyle="#f8fafc";ctx.setLineDash([5,5]);ctx.beginPath();ctx.moveTo(X(index),top);ctx.lineTo(X(index),H-bottom);ctx.stroke();ctx.setLineDash([]);
+}
+function resultsTable(){
+  const best=Math.min(...runs.map(r=>r.summary.final_delay));
+  const head='<tr><th>Approach</th><th>Arrived</th><th>Total delay (steps)</th><th>Extra delay from breakdowns</th><th>Deadlocked trains</th><th>Steps to finish</th></tr>';
+  $("results").innerHTML=head+runs.map(r=>{const s=r.summary;
+    return '<tr class="'+(s.final_delay===best?"best":"")+'"><td><span style="color:'+r.colour+'">●</span> '+r.name+'</td><td>'+s.arrived+'/'+s.trains+'</td><td>'+s.final_delay+'</td><td>'+(r.extra_delay===null?"n/a":r.extra_delay)+'</td><td>'+s.deadlocked+'</td><td>'+s.steps+'</td></tr>'}).join("");
+}
+function phaseFor(step){
+  if(plan.some(d=>d.start_step<=step&&step<=d.end_step))return "BREAKDOWN ACTIVE";
+  if(plan.some(d=>d.start_step>step))return "BEFORE BREAKDOWN";
+  return plan.length?"AFTER BREAKDOWN":"";
+}
+function render(){
+  $("timeline").value=index;$("stepLabel").textContent="Step "+index+" / "+last;$("phase").textContent=phaseFor(index);
+  runs.forEach((r,i)=>{
+    const f=r.frames[Math.min(index,r.frames.length-1)];
+    drawNetwork($("net"+i),f);
+    $("arr"+i).textContent=f.arrived+"/"+DATA.trains;$("del"+i).textContent=f.delay;
+    $("on"+i).textContent=f.on_track;$("brk"+i).textContent=f.malfunctioning;
+    const done=index>=r.frames.length-1;
+    const ord=r.decisions.filter(d=>d.action==="SELECT_ORDERING"&&d.step<index).slice(-1)[0];
+    const waits=r.decisions.filter(d=>d.step===index-1&&d.action==="WAIT").length;
+    $("st"+i).textContent=done?("Finished at step "+r.summary.steps+": total delay "+r.summary.final_delay)
+      :(ord?"Ordering rule in use: "+ord.choice.toUpperCase():(r.key==="mappo"?(waits?waits+" train(s) told to wait this step":"No train held back this step"):""));
+  });
+  drawDelay();
+}
+function stop(){if(timer){clearInterval(timer);timer=null}$("play").textContent="▶ Play"}
+function play(){if(timer){stop();return}$("play").textContent="Ⅱ Pause";timer=setInterval(()=>{if(index>=last){stop();return}index++;render()},Number($("speed").value))}
+$("play").addEventListener("click",play);
+$("prev").addEventListener("click",()=>{stop();index=Math.max(0,index-1);render()});
+$("next").addEventListener("click",()=>{stop();index=Math.min(last,index+1);render()});
+$("timeline").addEventListener("input",e=>{stop();index=Number(e.target.value);render()});
+$("speed").addEventListener("change",()=>{if(timer){stop();play()}});
+resultsTable();render();
+</script>
+</body></html>"""
+    return template.replace("__DATA__", encoded)
+
+
+def _run_with_reference(config, spec, policy_name, model, skip_reference):
+    """Record one approach on the scenario, plus (optionally) the same approach
+    without breakdowns, to measure the extra delay the breakdowns caused."""
+    _seed_torch(config.seed)
+    result = _run_episode(config, spec, policy_name, model, record=True)
+    reference_curve, recovery = None, None
+    if spec is not None and result["summary"]["disruption_plan"] and not skip_reference:
+        reference_curve = _run_episode(config, None, policy_name, model, record=False)["delay_curve"]
+        recovery = recovery_time(
+            result["delay_curve"], reference_curve,
+            [type("RecordedDisruption", (), d)() for d in result["summary"]["disruption_plan"]],
+        )
+    result["reference_curve"] = reference_curve
+    result["recovery_steps"] = recovery
+    return result
+
+
+def _main_compare(args):
+    config = EnvConfig(num_trains=args.trains, seed=args.seed)
+    spec = DisruptionSpec(count=args.disruptions, duration=args.duration) if args.disruptions else None
+    runs = []
+    for name in args.compare:
+        model = None
+        if name in ("ppo", "rl_strategy"):
+            model = args.ppo_model
+        elif name == "mappo":
+            model = args.mappo_model or _default_mappo_model()
+        result = _run_with_reference(config, spec, name, model, args.skip_reference)
+        summary = result["summary"]
+        reference = result["reference_curve"]
+        runs.append({
+            "key": name,
+            "name": DISPLAY_NAMES.get(name, name),
+            "description": DESCRIPTIONS.get(name, ""),
+            "colour": COMPARE_COLOURS.get(name, "#94a3b8"),
+            "frames": result["frames"],
+            "events": result["events"],
+            "decisions": result["decisions"],
+            "delay_curve": result["delay_curve"],
+            "summary": summary,
+            "extra_delay": (summary["final_delay"] - reference[-1]) if reference else None,
+            "recovery_steps": result["recovery_steps"],
+        })
+        print(f"{DISPLAY_NAMES.get(name, name):>22}: arrived {summary['arrived']}/{args.trains}, "
+              f"total delay {summary['final_delay']}, deadlocked {summary['deadlocked']}"
+              + (f", extra delay from breakdowns {runs[-1]['extra_delay']}"
+                 if runs[-1]["extra_delay"] is not None else ""))
+    payload = {
+        "trains": args.trains, "seed": args.seed,
+        "disruption_plan": runs[0]["summary"]["disruption_plan"],
+        "geometry": _recorded_geometry(config, spec),
+        "initial_trains": None,
+        "runs": runs,
+    }
+    payload["initial_trains"] = payload["geometry"].pop("initial_trains")
+    output = Path(args.output or f"outputs/compare_seed{args.seed}.html")
+    output.parent.mkdir(parents=True, exist_ok=True)
+    output.write_text(_render_compare_html(payload), encoding="utf-8")
+    print(f"Saved comparison replay: {output}")
+    if not args.no_open:
+        webbrowser.open(output.resolve().as_uri())
+
+
+def _recorded_geometry(config, spec):
+    """Track layout and train start/target markers. The scenario seed fixes
+    them, so they are the same for every approach."""
+    env, _, _ = make_env(config, spec)
+    geometry = _track_geometry(env)
+    geometry["initial_trains"] = [_train_snapshot(agent) for agent in env.agents]
+    return geometry
+
+
 def main():
     parser = argparse.ArgumentParser(description="Record and replay a Flatland railway episode in your browser.")
-    parser.add_argument("--policy", choices=[
-        "mappo", "rl_strategy", "fcfs", "priority", "edf", "spf",
-        "greedy_select", "release_all", "hold_if_blocked",
-    ], default="mappo")
+    names = ["mappo", "ppo", "rl_strategy", "fcfs", "priority", "edf", "spf",
+             "greedy_select", "release_all", "hold_if_blocked"]
+    parser.add_argument("--policy", choices=names, default="mappo")
     parser.add_argument("--model", help="MAPPO .pt checkpoint or PPO strategy .zip checkpoint")
+    parser.add_argument("--compare", nargs="+", choices=names, metavar="POLICY",
+                        help="run 2 to 4 approaches on the same scenario and show them side by side, "
+                             "e.g. --compare fcfs priority ppo mappo")
+    parser.add_argument("--ppo-model", default=DEFAULT_PPO_MODEL, help="PPO model used by --compare")
+    parser.add_argument("--mappo-model", default=None,
+                        help="MAPPO model used by --compare (default: results/models/mappo_seed1.pt)")
     parser.add_argument("--trains", type=int, default=8)
     parser.add_argument("--seed", type=int, default=42)
     parser.add_argument("--disruptions", type=int, default=1)
@@ -511,11 +792,16 @@ def main():
 
     if args.trains < 1 or args.disruptions < 0 or args.duration < 1:
         parser.error("--trains must be positive, --disruptions non-negative, and --duration positive")
+    if args.compare:
+        if not 2 <= len(args.compare) <= 4 or len(set(args.compare)) != len(args.compare):
+            parser.error("--compare needs 2 to 4 different policies")
+        return _main_compare(args)
     if args.policy == "rl_strategy" and not args.model:
         parser.error("--model is required for --policy rl_strategy")
 
     config = EnvConfig(num_trains=args.trains, seed=args.seed)
     spec = DisruptionSpec(count=args.disruptions, duration=args.duration) if args.disruptions else None
+    _seed_torch(args.seed)
     result = _run_episode(config, spec, args.policy, args.model, record=True)
 
     reference_curve = None
