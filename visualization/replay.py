@@ -616,11 +616,16 @@ $("cards").innerHTML = runs.map((r,i) =>
 $("legend").innerHTML = runs.map(r => '<span><i style="background:'+r.colour+'"></i>'+r.name+'</span>').join("");
 $("timeline").max = last;
 function point(pos, ox, oy, cell){return [ox+(pos[1]+.5)*cell,oy+(pos[0]+.5)*cell]}
+// Zoom to the part of the grid that has track, so the network fills the panel.
+const used=geometry.cells.length?geometry.cells:[[0,0],[geometry.height-1,geometry.width-1]];
+const box={r0:Math.min(...used.map(c=>c[0])),r1:Math.max(...used.map(c=>c[0])),
+           c0:Math.min(...used.map(c=>c[1])),c1:Math.max(...used.map(c=>c[1]))};
 function drawNetwork(canvas, frame){
   const ctx=canvas.getContext("2d"),W=canvas.width,H=canvas.height;
   ctx.clearRect(0,0,W,H);ctx.fillStyle="#0c1525";ctx.fillRect(0,0,W,H);
-  const cell=Math.min((W-40)/geometry.width,(H-40)/geometry.height);
-  const ox=(W-cell*geometry.width)/2,oy=(H-cell*geometry.height)/2;
+  const rows=box.r1-box.r0+1,cols=box.c1-box.c0+1;
+  const cell=Math.min((W-40)/cols,(H-40)/rows);
+  const ox=(W-cell*cols)/2-box.c0*cell,oy=(H-cell*rows)/2-box.r0*cell;
   ctx.strokeStyle="#34445b";ctx.lineWidth=Math.max(3,cell*.13);ctx.lineCap="round";
   for(const e of geometry.edges){const a=point(e[0],ox,oy,cell),b=point(e[1],ox,oy,cell);ctx.beginPath();ctx.moveTo(...a);ctx.lineTo(...b);ctx.stroke()}
   for(const t of DATA.initial_trains){
