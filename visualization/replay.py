@@ -558,7 +558,7 @@ button:hover{border-color:var(--accent)}input[type=range]{flex:1;min-width:120px
 #stepLabel{color:var(--muted);font-variant-numeric:tabular-nums;min-width:90px}
 #phase{color:var(--muted);font-size:13px}
 .grid{display:grid;grid-template-columns:repeat(var(--cols),minmax(0,1fr));gap:14px}
-.card{background:var(--panel);border:1px solid var(--line);border-top:4px solid var(--c);border-radius:13px;padding:12px;min-width:0}
+.card{background:var(--panel);border:1px solid var(--line);border-radius:13px;padding:12px;min-width:0}
 .card h3{margin:0;font-size:16px;display:flex;align-items:center;gap:8px}.card h3 i{width:10px;height:10px;border-radius:50%;background:var(--c);display:inline-block}
 .card p{margin:2px 0 8px;color:var(--muted);font-size:12px;min-height:17px}
 canvas.net{width:100%;height:auto;display:block;background:#0c1525;border-radius:9px}
