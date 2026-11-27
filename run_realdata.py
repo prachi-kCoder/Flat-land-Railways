@@ -47,6 +47,7 @@ def run_one(job):
     mode, trains, policy_key, seed, spec = job
     import torch
     torch.set_num_threads(1)
+    torch.manual_seed(seed)    # MAPPO samples its actions: same seed, same run
     result = run_episode(EnvConfig(num_trains=trains, seed=seed), policy_from_key(policy_key), spec)
     row = {"shift": f"realdata_{mode}", "level": trains}
     row.update(result.as_row())
@@ -67,7 +68,7 @@ def main():
     parser.add_argument("--multi", type=int, default=3, help="breakdowns in 'multi' scenarios")
     parser.add_argument("--seeds", type=int, default=20)
     parser.add_argument("--models", nargs="*", default=[])
-    parser.add_argument("--baselines", nargs="*", help="subset of baseline names (default: all)")
+    parser.add_argument("--baselines", nargs="*", help="subset of baseline names; give none to run only --models (default: all)")
     parser.add_argument("--workers", type=int, default=4)
     parser.add_argument("--out", default="outputs/realdata.csv")
     args = parser.parse_args()
@@ -87,7 +88,7 @@ def main():
         "multi": DisruptionSpec(count=args.multi, durations=steps),
         "realistic": DisruptionSpec(durations=steps, rate_per_train=rate),
     }
-    names = args.baselines or [p.name for p in BASELINES]
+    names = [p.name for p in BASELINES] if args.baselines is None else args.baselines
     for path in args.models:
         if not os.path.exists(path):
             parser.error(f"model not found: {path}")
